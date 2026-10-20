@@ -258,6 +258,21 @@
           <!-- 动态创建 <video> 或 <audio> -->
         </div>
       </div>
+
+      <!-- 窗口边缘与四角拖拽调整尺寸手柄 (全方向支持) -->
+      <div class="resize-handle resize-t absolute top-0 left-3 right-3 h-2 cursor-ns-resize z-40"></div>
+      <div class="resize-handle resize-b absolute bottom-0 left-3 right-3 h-2 cursor-ns-resize z-40"></div>
+      <div class="resize-handle resize-l absolute top-3 bottom-3 left-0 w-2 cursor-ew-resize z-40"></div>
+      <div class="resize-handle resize-r absolute top-3 bottom-3 right-0 w-2 cursor-ew-resize z-40"></div>
+      <div class="resize-handle resize-tl absolute top-0 left-0 w-3.5 h-3.5 cursor-nwse-resize z-50"></div>
+      <div class="resize-handle resize-tr absolute top-0 right-0 w-3.5 h-3.5 cursor-nesw-resize z-50"></div>
+      <div class="resize-handle resize-bl absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-50"></div>
+      <div class="resize-handle resize-br absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5 text-slate-500 hover:text-brand-400 transition-colors select-none" title="拖拽调整窗口大小">
+        <svg class="w-2.5 h-2.5 opacity-60 hover:opacity-100" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="9" y1="2" x2="2" y2="9" />
+          <line x1="9" y1="6" x2="6" y2="9" />
+        </svg>
+      </div>
     </div>
   </div>
 

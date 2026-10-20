@@ -17,6 +17,8 @@ const state = {
   activeMediaItem: null,
   isGooglePreview: false,
   isPlayerMaximized: false,
+  customPlayerWidth: null,
+  customPlayerHeight: null,
 };
 
 // DOM 元素引用
@@ -697,6 +699,13 @@ function openMediaPlayer(item) {
   // 针对竖屏与横屏视频自适应调整弹窗宽高（确保使用固定比例高度，实现纯 CSS 尺寸缩放无需重建 iframe）
   const isPortrait = isPortraitMedia(item);
   if (dom.playerDialog) {
+    dom.playerDialog.style.width = "";
+    dom.playerDialog.style.height = "";
+    state.customPlayerWidth = null;
+    state.customPlayerHeight = null;
+    dom.playerDialog.classList.add("transition-all", "duration-300");
+    dom.playerDialog.querySelectorAll(".resize-handle").forEach((h) => h.classList.remove("hidden"));
+
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
     dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800");
     if (isPortrait) {
@@ -912,6 +921,11 @@ function togglePlayerMaximize() {
 
     dom.playerDialog.classList.remove("max-w-6xl", "max-w-md", "sm:max-w-lg", "h-[80vh]", "h-[88vh]", "rounded-2xl", "border", "border-slate-800");
     dom.playerDialog.classList.add("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+    dom.playerDialog.style.width = "";
+    dom.playerDialog.style.height = "";
+
+    // 隐藏拖拽手柄
+    dom.playerDialog.querySelectorAll(".resize-handle").forEach((h) => h.classList.add("hidden"));
 
     if (previewContainer) {
       previewContainer.classList.remove("rounded-b-2xl");
@@ -924,20 +938,27 @@ function togglePlayerMaximize() {
       dom.playerMaximizeIcon.setAttribute("data-lucide", "minimize-2");
     }
   } else {
-    // 还原窗口模式：纯 CSS 恢复原有居中尺寸
+    // 还原窗口模式：恢复原有尺寸（若之前拖拽过尺寸，恢复拖拽尺寸；否则恢复比例）
     dom.playerModal.classList.add("p-3", "sm:p-6");
     dom.playerModal.classList.remove("p-0");
 
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
     dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800");
 
-    const isPortrait = isPortraitMedia(state.activeMediaItem);
-    if (isPortrait) {
-      dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
-      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
+    dom.playerDialog.querySelectorAll(".resize-handle").forEach((h) => h.classList.remove("hidden"));
+
+    if (state.customPlayerWidth && state.customPlayerHeight) {
+      dom.playerDialog.style.width = state.customPlayerWidth;
+      dom.playerDialog.style.height = state.customPlayerHeight;
     } else {
-      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
-      dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
+      const isPortrait = isPortraitMedia(state.activeMediaItem);
+      if (isPortrait) {
+        dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
+        dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
+      } else {
+        dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
+        dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
+      }
     }
 
     if (previewContainer) {
@@ -963,7 +984,7 @@ function closePlayer() {
   state.activeMediaItem = null;
   state.isGooglePreview = false;
 
-  // 重置最大化状态
+  // 重置最大化与自定义尺寸状态
   if (state.isPlayerMaximized) {
     state.isPlayerMaximized = false;
     dom.playerModal.classList.add("p-3", "sm:p-6");
@@ -975,8 +996,13 @@ function closePlayer() {
   }
 
   if (dom.playerDialog) {
+    dom.playerDialog.style.width = "";
+    dom.playerDialog.style.height = "";
+    state.customPlayerWidth = null;
+    state.customPlayerHeight = null;
     dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]", "w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]", "rounded-2xl", "border", "border-slate-800");
+    dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]", "rounded-2xl", "border", "border-slate-800", "transition-all", "duration-300");
+    dom.playerDialog.querySelectorAll(".resize-handle").forEach((h) => h.classList.remove("hidden"));
   }
   if (dom.streamSourceToggleBtn) {
     dom.streamSourceToggleBtn.classList.add("hidden");
@@ -1024,9 +1050,97 @@ function showLoading(show) {
   }
 }
 
+// 初始化播放器窗口边缘与四角拖拽调整尺寸功能
+function setupWindowResize() {
+  const dialog = dom.playerDialog;
+  if (!dialog) return;
+
+  const handles = dialog.querySelectorAll(".resize-handle");
+  let activeHandle = null;
+  let activeDir = "";
+
+  handles.forEach((handle) => {
+    handle.addEventListener("pointerdown", (e) => {
+      if (state.isPlayerMaximized) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      activeHandle = handle;
+      const classList = handle.className;
+      const dirMatch = classList.match(/resize-([a-z]+)/);
+      activeDir = dirMatch ? dirMatch[1] : "br";
+
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      // 移除预设尺寸与过渡，开启高帧率实时像素缩放
+      dialog.classList.remove("transition-all", "duration-300", "max-w-6xl", "max-w-md", "sm:max-w-lg", "h-[80vh]", "h-[88vh]");
+
+      // 禁用媒体区内部事件捕获，防止光标移入 iframe 时丢失 pointer 追踪
+      dom.mediaWrapper.style.pointerEvents = "none";
+      document.body.style.userSelect = "none";
+    });
+
+    handle.addEventListener("pointermove", (e) => {
+      if (!activeHandle || activeHandle !== handle) return;
+      e.preventDefault();
+
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+
+      let newWidth = dialog.offsetWidth;
+      let newHeight = dialog.offsetHeight;
+
+      // 限制最小与最大尺寸
+      const minW = Math.min(380, window.innerWidth - 32);
+      const maxW = window.innerWidth - 32;
+      const minH = 260;
+      const maxH = window.innerHeight - 32;
+
+      // 根据手柄方位，以视口中心对称缩放，使被拖拽的边/角紧贴鼠标光标
+      if (activeDir === "r" || activeDir === "tr" || activeDir === "br") {
+        newWidth = (e.clientX - centerX) * 2;
+      } else if (activeDir === "l" || activeDir === "tl" || activeDir === "bl") {
+        newWidth = (centerX - e.clientX) * 2;
+      }
+
+      if (activeDir === "b" || activeDir === "bl" || activeDir === "br") {
+        newHeight = (e.clientY - centerY) * 2;
+      } else if (activeDir === "t" || activeDir === "tl" || activeDir === "tr") {
+        newHeight = (centerY - e.clientY) * 2;
+      }
+
+      newWidth = Math.max(minW, Math.min(maxW, newWidth));
+      newHeight = Math.max(minH, Math.min(maxH, newHeight));
+
+      dialog.style.width = `${Math.round(newWidth)}px`;
+      dialog.style.height = `${Math.round(newHeight)}px`;
+
+      state.customPlayerWidth = dialog.style.width;
+      state.customPlayerHeight = dialog.style.height;
+    });
+
+    const onPointerEnd = (e) => {
+      if (!activeHandle || activeHandle !== handle) return;
+      try {
+        handle.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+      activeHandle = null;
+      activeDir = "";
+      dom.mediaWrapper.style.pointerEvents = "";
+      document.body.style.userSelect = "";
+    };
+
+    handle.addEventListener("pointerup", onPointerEnd);
+    handle.addEventListener("pointercancel", onPointerEnd);
+  });
+}
+
 // 事件监听与初始化
 function setupEventListeners() {
-  // 返回当前盘根目录
+  setupWindowResize();
+
   // 返回当前根目录
   dom.btnHome.addEventListener("click", () => {
     state.breadcrumbs = [{ id: state.rootFolderId, name: state.rootName }];
