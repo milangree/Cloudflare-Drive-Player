@@ -1,4 +1,4 @@
-import { getAccessToken, getCredentials, parseDrives } from "../utils/googleAuth.js";
+import { getAccessToken, getCredentials, getResolvedDrives } from "../utils/googleAuth.js";
 
 // 内存级短缓存，避免重复切换目录频繁向 Google 查询文件夹大小与数量
 const statsCache = new Map();
@@ -48,9 +48,11 @@ export async function onRequestGet(context) {
     const creds = getCredentials(env);
     const token = await getAccessToken(env);
 
-    const drives = parseDrives(env);
-    const defaultDriveId = drives[0] ? drives[0].id : "root";
-    let folderId = url.searchParams.get("folderId") || defaultDriveId;
+    let folderId = url.searchParams.get("folderId");
+    if (!folderId) {
+      const drives = await getResolvedDrives(env, token);
+      folderId = drives[0] ? drives[0].id : "root";
+    }
     const pageToken = url.searchParams.get("pageToken") || "";
     const search = url.searchParams.get("search") || "";
 

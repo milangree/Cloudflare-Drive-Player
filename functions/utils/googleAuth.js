@@ -71,16 +71,42 @@ export function getCredentials(env) {
   throw new Error("未配置 Google 凭据。请在 Cloudflare Pages 环境变量中配置 SERVICE_ACCOUNT_JSON 或 GOOGLE_CLIENT_EMAIL 与 GOOGLE_PRIVATE_KEY。");
 }
 
+// 缓存解析后的多盘列表（60秒TTL）
+let cachedDrives = null;
+let drivesExpiry = 0;
+
 /**
- * 解析多盘配置
- * 支持 JSON 数组格式或极简 key:value / key=value 格式
+ * 智能解析多盘配置（支持免配置自动扫描与独立分盘变量）
  */
-export function parseDrives(env) {
+export async function getResolvedDrives(env, token) {
+  const now = Date.now();
+  if (cachedDrives && drivesExpiry > now) {
+    return cachedDrives;
+  }
+
   const drives = [];
 
-  if (env.DRIVES && typeof env.DRIVES === "string" && env.DRIVES.trim()) {
+  // 1. 检查环境变量中的分盘配置: DRIVE_1, DRIVE_2, DRIVE_3... (便于在 CF 中单项添加与编辑，无需修改整串)
+  for (let i = 1; i <= 20; i++) {
+    const key = `DRIVE_${i}`;
+    const val = env[key];
+    if (val && typeof val === "string" && val.trim()) {
+      const trimmed = val.trim();
+      if (trimmed.includes(":") || trimmed.includes("=")) {
+        const sep = trimmed.includes(":") ? ":" : "=";
+        const idx = trimmed.indexOf(sep);
+        const name = trimmed.substring(0, idx).trim();
+        const id = trimmed.substring(idx + 1).trim();
+        if (id) drives.push({ id, name: name || `云盘 ${i}`, icon: "hard-drive" });
+      } else {
+        drives.push({ id: trimmed, name: `云盘 ${i}`, icon: "hard-drive" });
+      }
+    }
+  }
+
+  // 2. 检查旧版 DRIVES 环境变量 (JSON 或 逗号分隔)
+  if (drives.length === 0 && env.DRIVES && typeof env.DRIVES === "string" && env.DRIVES.trim()) {
     const raw = env.DRIVES.trim();
-    // 1. 尝试 JSON 数组解析
     if (raw.startsWith("[") || raw.startsWith("{")) {
       try {
         const parsed = JSON.parse(raw);
@@ -96,8 +122,6 @@ export function parseDrives(env) {
         });
       } catch (_) {}
     }
-
-    // 2. 若非 JSON，尝试多行或逗号分隔格式，如: "动漫影视:1-3i..., 欧美电影:1xxx..."
     if (drives.length === 0) {
       const parts = raw.split(/[\n,;]+/);
       parts.forEach((part, index) => {
@@ -108,9 +132,7 @@ export function parseDrives(env) {
           const idx = trimmed.indexOf(sep);
           const name = trimmed.substring(0, idx).trim();
           const id = trimmed.substring(idx + 1).trim();
-          if (id) {
-            drives.push({ id, name: name || `云盘 ${index + 1}`, icon: "hard-drive" });
-          }
+          if (id) drives.push({ id, name: name || `云盘 ${index + 1}`, icon: "hard-drive" });
         } else {
           drives.push({ id: trimmed, name: `云盘 ${index + 1}`, icon: "hard-drive" });
         }
@@ -118,16 +140,84 @@ export function parseDrives(env) {
     }
   }
 
-  // 3. 兼容已配置的单个 ROOT_FOLDER_ID
-  if (drives.length === 0 && env.ROOT_FOLDER_ID && env.ROOT_FOLDER_ID.trim()) {
-    drives.push({
-      id: env.ROOT_FOLDER_ID.trim(),
-      name: "主云盘",
-      icon: "hard-drive",
-    });
+  // 3. 【全新推荐：零配置自动分盘】如果未手动在环境变量中配置多个盘
+  if (drives.length === 0) {
+    const rootFolderId = env.ROOT_FOLDER_ID ? env.ROOT_FOLDER_ID.trim() : "";
+
+    // 模式 A：如果指定了 ROOT_FOLDER_ID（主总目录）
+    // 自动扫描 ROOT_FOLDER_ID 下的所有一级子文件夹，将其直接作为分盘选项！
+    if (rootFolderId && rootFolderId !== "root" && rootFolderId !== "auto") {
+      let rootName = "全部文件";
+      try {
+        const metaRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=name`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          if (meta.name) rootName = meta.name;
+        }
+      } catch (_) {}
+
+      // 查询一级子文件夹，将其作为各个独立的分类云盘
+      try {
+        const subRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q='${rootFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)&pageSize=50&orderBy=name_natural+asc&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (subRes.ok) {
+          const subData = await subRes.json();
+          if (Array.isArray(subData.files) && subData.files.length > 0) {
+            // 首先加入总库
+            drives.push({ id: rootFolderId, name: `📁 ${rootName} (全库)`, icon: "hard-drive" });
+            // 将子文件夹作为各个独立盘
+            subData.files.forEach((f) => {
+              drives.push({ id: f.id, name: f.name, icon: "folder" });
+            });
+          }
+        }
+      } catch (_) {}
+
+      if (drives.length === 0) {
+        drives.push({ id: rootFolderId, name: rootName, icon: "hard-drive" });
+      }
+    } else {
+      // 模式 B：完全不填 ROOT_FOLDER_ID，全自动扫描服务账号拥有的共享文件夹与团队盘！
+      // 1) 自动发现所有 sharedWithMe 直接共享给服务账号的文件夹
+      try {
+        const sharedRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=sharedWithMe=true+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)&pageSize=50&orderBy=name_natural+asc&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (sharedRes.ok) {
+          const sharedData = await sharedRes.json();
+          if (Array.isArray(sharedData.files)) {
+            sharedData.files.forEach((f) => {
+              drives.push({ id: f.id, name: f.name, icon: "folder" });
+            });
+          }
+        }
+      } catch (_) {}
+
+      // 2) 自动发现所有团队盘 (Shared Drives)
+      try {
+        const teamRes = await fetch(
+          `https://www.googleapis.com/drive/v3/drives?pageSize=50`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (teamRes.ok) {
+          const teamData = await teamRes.json();
+          if (Array.isArray(teamData.drives)) {
+            teamData.drives.forEach((d) => {
+              drives.push({ id: d.id, name: `👥 ${d.name}`, icon: "hard-drive" });
+            });
+          }
+        }
+      } catch (_) {}
+    }
   }
 
-  // 4. 最终兜底
+  // 4. 兜底
   if (drives.length === 0) {
     drives.push({
       id: "root",
@@ -136,6 +226,74 @@ export function parseDrives(env) {
     });
   }
 
+  // 为没有自定义名称的手动盘补齐真实名称
+  await Promise.all(
+    drives.map(async (drive) => {
+      if ((!drive.name || drive.name.startsWith("云盘") || drive.name === "主云盘") && drive.id !== "root") {
+        try {
+          const metaResp = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${drive.id}?supportsAllDrives=true&fields=name`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (metaResp.ok) {
+            const meta = await metaResp.json();
+            if (meta.name) drive.name = meta.name;
+          }
+        } catch (_) {}
+      }
+    })
+  );
+
+  cachedDrives = drives;
+  drivesExpiry = now + 60 * 1000;
+  return drives;
+}
+
+/**
+ * 兼容旧版同步解析
+ */
+export function parseDrives(env) {
+  const drives = [];
+  if (env.DRIVES && typeof env.DRIVES === "string" && env.DRIVES.trim()) {
+    const raw = env.DRIVES.trim();
+    if (raw.startsWith("[") || raw.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        list.forEach((item, index) => {
+          if (item && (item.id || item.folderId)) {
+            drives.push({
+              id: item.id || item.folderId,
+              name: item.name || `云盘 ${index + 1}`,
+              icon: item.icon || "hard-drive",
+            });
+          }
+        });
+      } catch (_) {}
+    }
+    if (drives.length === 0) {
+      const parts = raw.split(/[\n,;]+/);
+      parts.forEach((part, index) => {
+        const trimmed = part.trim();
+        if (!trimmed) return;
+        if (trimmed.includes(":") || trimmed.includes("=")) {
+          const sep = trimmed.includes(":") ? ":" : "=";
+          const idx = trimmed.indexOf(sep);
+          const name = trimmed.substring(0, idx).trim();
+          const id = trimmed.substring(idx + 1).trim();
+          if (id) drives.push({ id, name: name || `云盘 ${index + 1}`, icon: "hard-drive" });
+        } else {
+          drives.push({ id: trimmed, name: `云盘 ${index + 1}`, icon: "hard-drive" });
+        }
+      });
+    }
+  }
+  if (drives.length === 0 && env.ROOT_FOLDER_ID && env.ROOT_FOLDER_ID.trim()) {
+    drives.push({ id: env.ROOT_FOLDER_ID.trim(), name: "主云盘", icon: "hard-drive" });
+  }
+  if (drives.length === 0) {
+    drives.push({ id: "root", name: "Google 云端硬盘", icon: "hard-drive" });
+  }
   return drives;
 }
 
