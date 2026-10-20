@@ -651,15 +651,15 @@ function openMediaPlayer(item) {
   dom.playerFileName.title = item.name;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
 
-  // 针对竖屏视频自适应调整弹窗宽度，避免画面拉伸或上下截断
+  // 针对竖屏与横屏视频自适应调整弹窗宽度
   const isPortrait = isPortraitMedia(item);
   if (dom.playerDialog) {
     if (isPortrait) {
-      dom.playerDialog.classList.remove("max-w-5xl");
+      dom.playerDialog.classList.remove("max-w-6xl");
       dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg");
     } else {
       dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
-      dom.playerDialog.classList.add("max-w-5xl");
+      dom.playerDialog.classList.add("max-w-6xl");
     }
   }
 
@@ -696,12 +696,19 @@ function openMediaPlayer(item) {
     };
   }
 
-  // 智能播放引擎判定：检测到当前浏览器无法使用自带内核播放时，全自动调用 Google 预览
-  const canPlay = canBrowserPlayNatively(item);
-  if (!canPlay) {
-    dom.codecWarningBanner.classList.remove("hidden");
+  // 播放引擎：所有视频格式一律默认调用 Google 预览
+  if (item.isVideo) {
+    dom.playerTypeIcon.setAttribute("data-lucide", "film");
+    // 对特殊编码展示本地硬解建议
+    const isSpecialFormat = /\.(mkv|avi|flv|wmv|ts)$/i.test(item.name) || /10bit|hevc|h265/i.test(item.name);
+    if (isSpecialFormat) {
+      dom.codecWarningBanner.classList.remove("hidden");
+    } else {
+      dom.codecWarningBanner.classList.add("hidden");
+    }
     renderGooglePreview(item);
   } else {
+    dom.playerTypeIcon.setAttribute("data-lucide", "music");
     dom.codecWarningBanner.classList.add("hidden");
     renderPlayerMedia(item, streamUrl);
   }
@@ -714,22 +721,32 @@ function openMediaPlayer(item) {
   }
 }
 
-// 渲染 Google 官方转码预览（用于浏览器原生无法解码时的自动承接）
+// 渲染 Google 官方转码预览（所有视频格式统一采用 Google 预览最高画质通道）
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
   const isPortrait = isPortraitMedia(item);
 
-  // 容器裁剪法：Google 预览顶栏高约 50px，通过负 margin-top 完美裁切掉顶栏与弹出按钮，彻底根除黑点问题
+  // 解析目标分辨率，强制指定 Google 预览播放最高画质
+  const resBadge = getVideoResolution(item);
+  let vqParam = "highres";
+  if (resBadge === "4K") vqParam = "hd2160";
+  else if (resBadge === "2K") vqParam = "hd1440";
+  else if (resBadge === "1080P") vqParam = "hd1080";
+  else if (resBadge === "720P") vqParam = "hd720";
+
+  const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
+
+  // 容器裁剪法：Google 预览顶栏高约 50px，通过负 margin-top 完美裁切掉顶栏与弹出按钮，彻底根除黑点
+  // 并且移除 sandbox 限制，赋予完整的媒体特权，解除 Google 播放器对高码率硬件解码的封锁！
   const containerHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh; min-height: 480px;";
   dom.mediaWrapper.innerHTML = `
     <div class="relative w-full h-full overflow-hidden flex items-center justify-center bg-black rounded-b-2xl" style="${containerHeight}">
       <iframe 
-        src="https://drive.google.com/file/d/${item.id}/preview" 
+        src="${previewUrl}" 
         class="w-full border-0" 
         style="display: block; width: 100%; height: calc(100% + 50px); margin-top: -50px;"
-        allow="autoplay; fullscreen"
-        sandbox="allow-scripts allow-same-origin allow-presentation"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         loading="eager"
       ></iframe>
     </div>
@@ -790,7 +807,7 @@ function closePlayer() {
   state.isGooglePreview = false;
   if (dom.playerDialog) {
     dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
-    dom.playerDialog.classList.add("max-w-5xl");
+    dom.playerDialog.classList.add("max-w-6xl");
   }
   dom.extPlayerMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
