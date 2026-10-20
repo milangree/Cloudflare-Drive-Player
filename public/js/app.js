@@ -12,6 +12,8 @@ const state = {
   sortBy: "name_asc",
   searchQuery: "",
   playerInstance: null,
+  activeMediaItem: null,
+  isGooglePreview: false,
 };
 
 // DOM 元素引用
@@ -39,6 +41,15 @@ const dom = {
   playerCopyLinkBtn: document.getElementById("player-copy-link-btn"),
   closePlayerBtn: document.getElementById("close-player-btn"),
   mediaWrapper: document.getElementById("media-wrapper"),
+  codecWarningBanner: document.getElementById("codec-warning-banner"),
+  toggleGooglePreviewBtn: document.getElementById("toggle-google-preview-btn"),
+  previewModeText: document.getElementById("preview-mode-text"),
+  extPlayerMenuBtn: document.getElementById("ext-player-menu-btn"),
+  extPlayerMenu: document.getElementById("ext-player-menu"),
+  btnPotplayer: document.getElementById("btn-potplayer"),
+  btnVlc: document.getElementById("btn-vlc"),
+  btnIina: document.getElementById("btn-iina"),
+  btnInfuse: document.getElementById("btn-infuse"),
   // 图片模态框
   imageModal: document.getElementById("image-modal"),
   imagePreview: document.getElementById("image-preview"),
@@ -88,6 +99,12 @@ function getFileIcon(item) {
   if (/\.(zip|rar|7z|tar|gz)$/i.test(item.name)) return { icon: "archive", color: "text-yellow-400" };
   if (/\.(iso|dmg|exe|apk)$/i.test(item.name)) return { icon: "disc", color: "text-indigo-400" };
   return { icon: "file", color: "text-slate-400" };
+}
+
+// 获取高清缩略图地址
+function getHighResThumb(item, size = 640) {
+  if (!item.thumbnailLink) return null;
+  return item.thumbnailLink.replace(/=s\d+.*$/, `=s${size}`);
 }
 
 // 辅助工具：全局 Toast
@@ -147,7 +164,6 @@ async function loadFolder(folderId, searchKeyword = "") {
 
     state.items = data.items || [];
     if (data.currentFolder && !searchKeyword.trim()) {
-      // 更新当前面包屑最新节点的名称
       const last = state.breadcrumbs[state.breadcrumbs.length - 1];
       if (last && last.id === folderId) {
         last.name = data.currentFolder.name;
@@ -169,9 +185,7 @@ async function loadFolder(folderId, searchKeyword = "") {
 function applyFilterAndSort() {
   let list = [...state.items];
 
-  // 排序
   list.sort((a, b) => {
-    // 文件夹始终排在最前面
     if (a.isFolder && !b.isFolder) return -1;
     if (!a.isFolder && b.isFolder) return 1;
 
@@ -221,13 +235,12 @@ function renderItems() {
     renderListView(items);
   }
 
-  // 刷新 Lucide 图标
   if (window.lucide) {
     lucide.createIcons();
   }
 }
 
-// 渲染网格视图
+// 渲染网格视图 (增强视频缩略图海报预览)
 function renderGridView(items) {
   dom.gridView.innerHTML = items
     .map((item) => {
@@ -235,24 +248,57 @@ function renderGridView(items) {
       const isMedia = item.isVideo || item.isAudio;
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+      const thumbUrl = getHighResThumb(item, 640);
+      const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
+
+      // 缩略图海报区域 (视频或图片)
+      let mediaPosterHtml = "";
+      if (thumbUrl && (item.isVideo || item.isImage)) {
+        mediaPosterHtml = `
+          <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 border border-slate-800/80 group-hover:border-brand-500/40 transition-colors">
+            <img src="${thumbUrl}" alt="${item.name}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.parentElement.style.display='none'">
+            ${
+              item.isVideo
+                ? `<div class="absolute inset-0 bg-black/25 group-hover:bg-black/10 flex items-center justify-center transition-colors">
+                    <div class="w-10 h-10 rounded-full bg-brand-500/90 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                      <i data-lucide="play" class="w-5 h-5 fill-white ml-0.5"></i>
+                    </div>
+                  </div>`
+                : ""
+            }
+            ${
+              ext
+                ? `<span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-black/75 backdrop-blur text-white rounded">${ext}</span>`
+                : ""
+            }
+          </div>
+        `;
+      }
 
       return `
-        <div class="glass-card rounded-xl p-4 flex flex-col justify-between group cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <div class="flex items-start gap-3">
-            <div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color}">
-              <i data-lucide="${icon}" class="w-5 h-5"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <h4 class="text-sm font-medium text-slate-200 truncate group-hover:text-brand-500 transition-colors" title="${item.name}">
-                ${item.name}
-              </h4>
-              <p class="text-xs text-slate-500 mt-1">
-                ${item.isFolder ? "文件夹" : formatBytes(item.size)}
-              </p>
+        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+          <div>
+            ${mediaPosterHtml}
+            <div class="flex items-start gap-3">
+              ${
+                !mediaPosterHtml
+                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color}">
+                      <i data-lucide="${icon}" class="w-5 h-5"></i>
+                    </div>`
+                  : ""
+              }
+              <div class="flex-1 min-w-0">
+                <h4 class="text-sm font-medium text-slate-200 truncate group-hover:text-brand-500 transition-colors leading-tight" title="${item.name}">
+                  ${item.name}
+                </h4>
+                <p class="text-xs text-slate-500 mt-1">
+                  ${item.isFolder ? "文件夹" : formatBytes(item.size)}
+                </p>
+              </div>
             </div>
           </div>
 
-          <div class="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
+          <div class="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
             <span class="truncate">${formatDate(item.modifiedTime)}</span>
             <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
               ${
@@ -282,7 +328,7 @@ function renderGridView(items) {
   bindItemEvents(dom.gridView);
 }
 
-// 渲染列表视图
+// 渲染列表视图 (缩略图辅助)
 function renderListView(items) {
   dom.listTbody.innerHTML = items
     .map((item) => {
@@ -290,36 +336,43 @@ function renderListView(items) {
       const isMedia = item.isVideo || item.isAudio;
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+      const thumbUrl = getHighResThumb(item, 120);
 
       return `
         <tr class="file-row cursor-pointer group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <td class="px-4 py-3 flex items-center gap-3">
-            <div class="${color} flex-shrink-0">
-              <i data-lucide="${icon}" class="w-4 h-4"></i>
-            </div>
+          <td class="px-4 py-2.5 flex items-center gap-3">
+            ${
+              thumbUrl && (item.isVideo || item.isImage)
+                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0">
+                    <img src="${thumbUrl}" alt="" class="w-full h-full object-cover">
+                  </div>`
+                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                    <i data-lucide="${icon}" class="w-4 h-4"></i>
+                  </div>`
+            }
             <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-lg" title="${item.name}">
               ${item.name}
             </span>
           </td>
-          <td class="px-4 py-3 text-xs text-slate-400 hidden md:table-cell">
+          <td class="px-4 py-2.5 text-xs text-slate-400 hidden md:table-cell">
             ${item.isFolder ? "-" : formatBytes(item.size)}
           </td>
-          <td class="px-4 py-3 text-xs text-slate-500 hidden sm:table-cell">
+          <td class="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
             ${formatDate(item.modifiedTime)}
           </td>
-          <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+          <td class="px-4 py-2.5 text-right" onclick="event.stopPropagation()">
             <div class="flex items-center justify-end gap-1">
               ${
                 isMedia
                   ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-400 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
-                      <i data-lucide="play" class="w-4 h-4"></i>
+                      <i data-lucide="play" class="w-3.5 h-3.5"></i>
                     </button>`
                   : ""
               }
               ${
                 !item.isFolder
                   ? `<a href="${downloadUrl}" download class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400" title="下载">
-                      <i data-lucide="download" class="w-4 h-4"></i>
+                      <i data-lucide="download" class="w-3.5 h-3.5"></i>
                     </a>
                     <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
                       <i data-lucide="copy" class="w-4 h-4"></i>
@@ -338,7 +391,6 @@ function renderListView(items) {
 
 // 绑定卡片与列表行点击事件
 function bindItemEvents(container) {
-  // 单击项目（进入文件夹或打开预览）
   container.querySelectorAll("[data-id]").forEach((el) => {
     el.addEventListener("click", () => {
       const id = el.getAttribute("data-id");
@@ -353,13 +405,11 @@ function bindItemEvents(container) {
       } else if (item.isImage) {
         openImagePreview(item);
       } else {
-        // 其他文件直接下载
         window.open(`/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`, "_blank");
       }
     });
   });
 
-  // 播放按钮
   container.querySelectorAll(".play-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -369,7 +419,6 @@ function bindItemEvents(container) {
     });
   });
 
-  // 复制链接按钮
   container.querySelectorAll(".copy-link-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -386,7 +435,6 @@ function bindItemEvents(container) {
 
 // 导航到指定文件夹
 function navigateToFolder(folderId, folderName) {
-  // 避免重复追加
   const existingIdx = state.breadcrumbs.findIndex((b) => b.id === folderId);
   if (existingIdx !== -1) {
     state.breadcrumbs = state.breadcrumbs.slice(0, existingIdx + 1);
@@ -435,9 +483,11 @@ function renderBreadcrumbs() {
   }
 }
 
-// 打开流媒体播放器 (Plyr)
+// 打开流媒体播放器
 function openMediaPlayer(item) {
   destroyPlayer();
+  state.activeMediaItem = item;
+  state.isGooglePreview = false;
 
   dom.playerFileName.textContent = item.name;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
@@ -450,6 +500,33 @@ function openMediaPlayer(item) {
     } catch (_) {}
   };
 
+  // 配置外部专业播放器链接（针对 MKV / HEVC 10bit 秒播）
+  dom.btnPotplayer.href = `potplayer://${streamUrl}`;
+  dom.btnVlc.href = `vlc://${streamUrl}`;
+  dom.btnIina.href = `iina://weblink?url=${encodeURIComponent(streamUrl)}`;
+  dom.btnInfuse.href = `infuse://open?url=${encodeURIComponent(streamUrl)}`;
+
+  // 格式判断：MKV、HEVC、AVI、FLV 常见编码不被所有浏览器直接支持
+  const isSpecialFormat = /\.(mkv|avi|flv|wmv)$/i.test(item.name);
+  if (isSpecialFormat) {
+    dom.codecWarningBanner.classList.remove("hidden");
+  } else {
+    dom.codecWarningBanner.classList.add("hidden");
+  }
+
+  dom.previewModeText.textContent = "Google 预览";
+  renderPlayerMedia(item, streamUrl);
+
+  dom.playerModal.classList.remove("hidden");
+  dom.playerModal.classList.add("flex");
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
+// 渲染播放器内部内容
+function renderPlayerMedia(item, streamUrl) {
   dom.mediaWrapper.innerHTML = "";
 
   if (item.isVideo) {
@@ -459,8 +536,14 @@ function openMediaPlayer(item) {
     video.playsInline = true;
     video.controls = true;
     video.crossOrigin = "anonymous";
-    video.src = `/api/stream/${item.id}`;
+    video.src = streamUrl;
     video.className = "w-full max-h-[75vh]";
+
+    // 监听播放异常（例如 MKV 或 HEVC 浏览器无法硬解）
+    video.addEventListener("error", () => {
+      dom.codecWarningBanner.classList.remove("hidden");
+    });
+
     dom.mediaWrapper.appendChild(video);
 
     state.playerInstance = new Plyr(video, {
@@ -473,7 +556,7 @@ function openMediaPlayer(item) {
     const audio = document.createElement("audio");
     audio.id = "active-player";
     audio.controls = true;
-    audio.src = `/api/stream/${item.id}`;
+    audio.src = streamUrl;
     audio.className = "w-full p-4";
     dom.mediaWrapper.appendChild(audio);
 
@@ -481,18 +564,37 @@ function openMediaPlayer(item) {
       autoplay: true,
     });
   }
+}
 
-  dom.playerModal.classList.remove("hidden");
-  dom.playerModal.classList.add("flex");
+// 切换 Google 官方转码预览模式
+function toggleGooglePreview() {
+  if (!state.activeMediaItem) return;
 
-  if (window.lucide) {
-    lucide.createIcons();
+  if (!state.isGooglePreview) {
+    destroyPlayer();
+    state.isGooglePreview = true;
+    dom.previewModeText.textContent = "原生播放器";
+    dom.mediaWrapper.innerHTML = `
+      <iframe 
+        src="https://drive.google.com/file/d/${state.activeMediaItem.id}/preview" 
+        class="w-full h-[75vh] border-0" 
+        allow="autoplay; fullscreen"
+      ></iframe>
+    `;
+  } else {
+    state.isGooglePreview = false;
+    dom.previewModeText.textContent = "Google 预览";
+    const streamUrl = `${window.location.origin}/api/stream/${state.activeMediaItem.id}`;
+    renderPlayerMedia(state.activeMediaItem, streamUrl);
   }
 }
 
 // 关闭并销毁播放器
 function closePlayer() {
   destroyPlayer();
+  state.activeMediaItem = null;
+  state.isGooglePreview = false;
+  dom.extPlayerMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
   dom.playerModal.classList.remove("flex");
 }
@@ -587,6 +689,19 @@ function setupEventListeners() {
   dom.closeGuideBtn.addEventListener("click", () => {
     dom.configGuideModal.classList.add("hidden");
     dom.configGuideModal.classList.remove("flex");
+  });
+
+  // 切换 Google 预览
+  dom.toggleGooglePreviewBtn.addEventListener("click", toggleGooglePreview);
+
+  // 外部播放器菜单点击切换
+  dom.extPlayerMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dom.extPlayerMenu.classList.toggle("hidden");
+  });
+
+  document.addEventListener("click", () => {
+    dom.extPlayerMenu.classList.add("hidden");
   });
 
   // 键盘 Esc 关闭

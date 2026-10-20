@@ -145,13 +145,46 @@
   <div id="player-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 transition-all">
     <div class="relative w-full max-w-5xl bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
       <!-- 播放器顶部条 -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800/80 bg-slate-900/80">
-        <div class="flex items-center gap-2.5 overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800/80 bg-slate-900/80">
+        <div class="flex items-center gap-2.5 overflow-hidden flex-1 min-w-0 mr-3">
           <i data-lucide="film" class="w-4 h-4 text-brand-500 flex-shrink-0" id="player-type-icon"></i>
           <span id="player-file-name" class="font-medium text-sm text-slate-200 truncate">正在播放...</span>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0 ml-4">
-          <a id="player-download-btn" href="#" target="_blank" download class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="下载此文件">
+        <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <!-- 切换 Google 原生预览 -->
+          <button id="toggle-google-preview-btn" class="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors flex items-center gap-1.5" title="如果视频黑屏，尝试 Google 官方云端转码预览">
+            <i data-lucide="globe" class="w-3.5 h-3.5 text-brand-400"></i>
+            <span class="hidden sm:inline" id="preview-mode-text">Google 预览</span>
+          </button>
+
+          <!-- 外部播放器菜单下拉 -->
+          <div class="relative inline-block text-left" id="ext-player-dropdown-container">
+            <button id="ext-player-menu-btn" class="px-2.5 py-1 text-xs rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 hover:text-brand-300 border border-brand-500/30 transition-colors flex items-center gap-1">
+              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">外部播放</span>
+            </button>
+            <div id="ext-player-menu" class="hidden absolute right-0 mt-2 w-48 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-1 z-50 text-xs text-slate-200">
+              <div class="px-3 py-1.5 text-[10px] text-slate-400 border-b border-slate-800/80">支持 HEVC 10bit 硬解</div>
+              <a id="btn-potplayer" href="#" class="flex items-center gap-2 px-3 py-2 hover:bg-slate-800 hover:text-white transition-colors">
+                <i data-lucide="play-circle" class="w-3.5 h-3.5 text-amber-400"></i>
+                PotPlayer (Windows)
+              </a>
+              <a id="btn-vlc" href="#" class="flex items-center gap-2 px-3 py-2 hover:bg-slate-800 hover:text-white transition-colors">
+                <i data-lucide="cone" class="w-3.5 h-3.5 text-orange-400"></i>
+                VLC Player
+              </a>
+              <a id="btn-iina" href="#" class="flex items-center gap-2 px-3 py-2 hover:bg-slate-800 hover:text-white transition-colors">
+                <i data-lucide="play-square" class="w-3.5 h-3.5 text-sky-400"></i>
+                IINA (macOS)
+              </a>
+              <a id="btn-infuse" href="#" class="flex items-center gap-2 px-3 py-2 hover:bg-slate-800 hover:text-white transition-colors">
+                <i data-lucide="tv" class="w-3.5 h-3.5 text-rose-400"></i>
+                Infuse (iOS/Mac)
+              </a>
+            </div>
+          </div>
+
+          <a id="player-download-btn" href="#" target="_blank" download class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="下载原文件">
             <i data-lucide="download" class="w-4 h-4"></i>
           </a>
           <button id="player-copy-link-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="复制直链">
@@ -160,6 +193,14 @@
           <button id="close-player-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="关闭 (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
+        </div>
+      </div>
+
+      <!-- MKV / 编码兼容提示条 -->
+      <div id="codec-warning-banner" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-300 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0 text-amber-400"></i>
+          <span>检测到 MKV / HEVC 格式。若画面黑屏，建议点击右上方<strong>「外部播放」</strong>唤起 PotPlayer/VLC 硬件解码，或切换<strong>「Google 预览」</strong>。</span>
         </div>
       </div>
 

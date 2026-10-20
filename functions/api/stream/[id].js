@@ -2,9 +2,9 @@ import { getAccessToken } from "../../utils/googleAuth.js";
 
 /**
  * 音视频流式播放代理核心接口
- * 完美支持 HTTP 206 Partial Content 与 Range 请求，支持音视频拖拽进度条
+ * 完美支持 HTTP 206 Partial Content、Range 请求与 HEAD 预检探测
  */
-export async function onRequestGet(context) {
+async function handleStream(context, isHead = false) {
   const { params, request, env } = context;
   const fileId = params.id;
 
@@ -31,7 +31,7 @@ export async function onRequestGet(context) {
 
     // 3. 请求 Google Drive API 获取媒体流
     const googleResp = await fetch(googleDriveUrl, {
-      method: "GET",
+      method: isHead ? "HEAD" : "GET",
       headers: fetchHeaders,
     });
 
@@ -73,7 +73,7 @@ export async function onRequestGet(context) {
     responseHeaders.set("Cache-Control", "public, max-age=14400");
 
     // 返回 206 或 200 状态码
-    return new Response(googleResp.body, {
+    return new Response(isHead ? null : googleResp.body, {
       status: googleResp.status,
       statusText: googleResp.statusText,
       headers: responseHeaders,
@@ -81,4 +81,12 @@ export async function onRequestGet(context) {
   } catch (error) {
     return new Response(`流代理错误: ${error.message}`, { status: 500 });
   }
+}
+
+export async function onRequestGet(context) {
+  return handleStream(context, false);
+}
+
+export async function onRequestHead(context) {
+  return handleStream(context, true);
 }
