@@ -11,14 +11,17 @@ export async function onRequestPost(context) {
 
     // 1. 前台站点访问密码验证
     if (action === "verify_access") {
-      if (!config.requirePassword || !config.accessPassword) {
+      const inputPass = (password || "").trim();
+      const targetPass = (config.accessPassword || "").trim();
+
+      if (!config.requirePassword || !targetPass) {
         return new Response(JSON.stringify({ success: true, needPassword: false }), {
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      if (password === config.accessPassword) {
-        const token = await generateToken({ role: "viewer" }, config.accessPassword);
+      if (inputPass && inputPass === targetPass) {
+        const token = await generateToken({ role: "viewer" }, targetPass);
         return new Response(
           JSON.stringify({
             success: true,
@@ -39,8 +42,9 @@ export async function onRequestPost(context) {
 
     // 2. 后台管理登录
     if (action === "admin_login") {
-      const adminPass = config.adminPassword || "admin";
-      if (password === adminPass) {
+      const inputAdminPass = (password || "").trim();
+      const adminPass = (config.adminPassword || "admin").trim();
+      if (inputAdminPass && inputAdminPass === adminPass) {
         const token = await generateToken({ role: "admin" }, adminPass);
         return new Response(
           JSON.stringify({

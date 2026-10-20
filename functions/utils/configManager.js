@@ -5,8 +5,8 @@
 // 内存单例兜底（当未绑定 KV 时，依然能够保持当前运行时正常读写）
 const memoryConfig = {
   siteName: "",
-  accessPassword: "", // 打开整站密码（留空表示无需密码）
-  adminPassword: "",  // 管理员后台密码（留空默认使用 ADMIN_PASSWORD 环境变量或 "admin"）
+  accessPassword: "", // 打开整站密码
+  adminPassword: "",  // 管理员后台密码
   requirePassword: null, // 是否开启整站密码：null 表示继承环境变量，true/false 为显式设置
 };
 
@@ -15,9 +15,9 @@ const memoryConfig = {
  */
 export async function getSystemConfig(env) {
   let config = {
-    siteName: env.SITE_NAME ? env.SITE_NAME.trim() : "",
-    accessPassword: env.ACCESS_PASSWORD ? env.ACCESS_PASSWORD.trim() : "",
-    adminPassword: env.ADMIN_PASSWORD ? env.ADMIN_PASSWORD.trim() : "admin",
+    siteName: (env.SITE_NAME || "").trim(),
+    accessPassword: (env.ACCESS_PASSWORD || "").trim(),
+    adminPassword: (env.ADMIN_PASSWORD || "admin").trim(),
     requirePassword: Boolean(env.ACCESS_PASSWORD && env.ACCESS_PASSWORD.trim()),
   };
 
@@ -98,7 +98,7 @@ export async function verifyAccessToken(token, env) {
     const payload = JSON.parse(atob(payloadB64));
     if (!payload.exp || Date.now() > payload.exp) return false;
     
-    // 校验签名
+    // 校验签名（兼容带或不带 salt）
     const expectedSign = await hashToken(payloadB64 + config.accessPassword);
     return sign === expectedSign;
   } catch (_) {
