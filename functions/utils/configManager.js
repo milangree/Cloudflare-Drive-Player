@@ -158,6 +158,10 @@ export async function getSystemConfig(env) {
  * 保存后台配置
  */
 export async function saveSystemConfig(env, newConfig) {
+  // 立即清除同步时间戳与缓存，强迫后续读取实时查库
+  cachedDriveConfig = null;
+  lastDriveSyncTime = 0;
+
   // 更新内存
   if (typeof newConfig.siteName === "string") memoryConfig.siteName = newConfig.siteName.trim();
   if (typeof newConfig.accessPassword === "string") memoryConfig.accessPassword = newConfig.accessPassword.trim();
