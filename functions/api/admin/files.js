@@ -229,6 +229,111 @@ export async function onRequestPost(context) {
       });
     }
 
+    // 动作 5：创建文本/代码/普通文件
+    if (action === "create_file") {
+      const fileName = body.name ? body.name.trim() : "";
+      const parent = body.parentFolderId || "root";
+      const fileContent = typeof body.content === "string" ? body.content : "";
+      const mimeType = body.mimeType || "text/plain; charset=utf-8";
+
+      if (!fileName) {
+        return new Response(JSON.stringify({ success: false, error: "文件名称不能为空" }), { status: 400 });
+      }
+
+      // 使用 multipart/related 协议直接一步创建带内容的文件
+      const boundary = "-------CFDrivePlayerBoundary" + Date.now();
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+
+      const metadata = {
+        name: fileName,
+        mimeType: mimeType.split(";")[0].trim(),
+        parents: [parent],
+      };
+
+      const multipartBody =
+        delimiter +
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+        JSON.stringify(metadata) +
+        delimiter +
+        `Content-Type: ${mimeType}\r\n\r\n` +
+        fileContent +
+        closeDelimiter;
+
+      const uploadUrl = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true";
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${googleToken}`,
+          "Content-Type": `multipart/related; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Google Drive API 创建文件失败: ${errText}`);
+      }
+
+      const newFile = await res.json();
+      return new Response(JSON.stringify({ success: true, message: "文件创建成功", file: newFile }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // 动作 6：申请大文件/断点续传 Resumable Upload 临时上传地址
+    if (action === "init_resumable_upload") {
+      const fileName = body.name ? body.name.trim() : "";
+      const parent = body.parentFolderId || "root";
+      const mimeType = body.mimeType || "application/octet-stream";
+      const fileSize = body.fileSize; // 可选，字节数
+
+      if (!fileName) {
+        return new Response(JSON.stringify({ success: false, error: "文件名称不能为空" }), { status: 400 });
+      }
+
+      const metadata = {
+        name: fileName,
+        parents: [parent],
+      };
+
+      const initUrl = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true";
+      const initHeaders = {
+        Authorization: `Bearer ${googleToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mimeType,
+      };
+      if (fileSize !== undefined && fileSize !== null) {
+        initHeaders["X-Upload-Content-Length"] = String(fileSize);
+      }
+
+      const res = await fetch(initUrl, {
+        method: "POST",
+        headers: initHeaders,
+        body: JSON.stringify(metadata),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`初始化断点续传上传会话失败: ${errText}`);
+      }
+
+      // Google 返回的 Location Header 即为专属上传 URL
+      const uploadUrl = res.headers.get("Location");
+      if (!uploadUrl) {
+        throw new Error("未能获取 Google Drive 返回的上传通道 Location");
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          uploadUrl,
+          message: "上传通道建立成功",
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(JSON.stringify({ success: false, error: "不支持的操作指令" }), { status: 400 });
   } catch (err) {
     return new Response(JSON.stringify({ success: false, error: err.message }), {

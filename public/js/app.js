@@ -73,6 +73,29 @@ const dom = {
   fileActionInput: document.getElementById("file-action-input"),
   cancelFileActionBtn: document.getElementById("cancel-file-action-btn"),
   confirmFileActionBtn: document.getElementById("confirm-file-action-btn"),
+  // 管理员快捷操作区
+  adminQuickActions: document.getElementById("admin-quick-actions"),
+  adminUploadBtn: document.getElementById("admin-upload-btn"),
+  adminFileInput: document.getElementById("admin-file-input"),
+  adminNewFolderBtn: document.getElementById("admin-new-folder-btn"),
+  adminNewFileBtn: document.getElementById("admin-new-file-btn"),
+  // 新建文件模态框
+  newFileModal: document.getElementById("new-file-modal"),
+  closeNewFileModalBtn: document.getElementById("close-new-file-modal-btn"),
+  newFileForm: document.getElementById("new-file-form"),
+  newFileNameInput: document.getElementById("new-file-name-input"),
+  newFileContentInput: document.getElementById("new-file-content-input"),
+  cancelNewFileBtn: document.getElementById("cancel-new-file-btn"),
+  confirmNewFileBtn: document.getElementById("confirm-new-file-btn"),
+  // 上传进度模态框
+  uploadProgressModal: document.getElementById("upload-progress-modal"),
+  uploadStatusBadge: document.getElementById("upload-status-badge"),
+  uploadFilename: document.getElementById("upload-filename"),
+  uploadPercentage: document.getElementById("upload-percentage"),
+  uploadProgressBar: document.getElementById("upload-progress-bar"),
+  uploadBytesInfo: document.getElementById("upload-bytes-info"),
+  uploadSpeedInfo: document.getElementById("upload-speed-info"),
+  abortUploadBtn: document.getElementById("abort-upload-btn"),
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
   playerDialog: document.getElementById("player-dialog"),
@@ -257,6 +280,9 @@ async function checkSystemInfo() {
       state.breadcrumbs = [{ id: rootId, name: rootName }];
       renderBreadcrumbs();
 
+      // 同步更新管理员快捷操作栏与操作按钮显示
+      updateAdminUIState();
+
       // 如果启用了站点访问密码保护
       if (data.requirePassword && !state.accessToken && !state.adminToken) {
         openSitePasswordModal();
@@ -270,6 +296,21 @@ async function checkSystemInfo() {
   }
 }
 
+// 更新管理员特权 UI 状态（显隐快捷操作栏）
+function updateAdminUIState() {
+  const hasAdmin = Boolean(state.adminToken);
+  state.isAdmin = hasAdmin;
+  if (dom.adminQuickActions) {
+    if (hasAdmin) {
+      dom.adminQuickActions.classList.remove("hidden");
+      dom.adminQuickActions.classList.add("flex");
+    } else {
+      dom.adminQuickActions.classList.add("hidden");
+      dom.adminQuickActions.classList.remove("flex");
+    }
+  }
+}
+
 // 打开/切换后台管理窗口
 let currentFileAction = {};
 
@@ -279,6 +320,7 @@ function openAdminModal() {
 
   if (state.adminToken) {
     state.isAdmin = true;
+    updateAdminUIState();
     loadAdminDashboard();
   } else {
     dom.adminLoginPanel.classList.remove("hidden");
@@ -301,6 +343,7 @@ async function loadAdminDashboard() {
       state.adminToken = "";
       state.isAdmin = false;
       localStorage.removeItem("admin_token");
+      updateAdminUIState();
       dom.adminLoginPanel.classList.remove("hidden");
       dom.adminDashboardPanel.classList.add("hidden");
       return;
@@ -322,7 +365,7 @@ async function loadAdminDashboard() {
   }
 }
 
-// 打开文件操作模态框 (重命名 / 移动)
+// 打开文件操作模态框 (重命名 / 移动 / 新建文件夹)
 function openFileActionModal({ action, title, desc, defaultValue = "", placeholder = "", fileId, shortcutId = "" }) {
   currentFileAction = { action, fileId, shortcutId };
   dom.fileActionTitle.textContent = title;
@@ -341,6 +384,132 @@ function closeFileActionModal() {
   dom.fileActionModal.classList.add("hidden");
   dom.fileActionModal.classList.remove("flex");
   currentFileAction = {};
+}
+
+// 打开新建文本/代码文件模态框
+function openNewFileModal() {
+  dom.newFileNameInput.value = "";
+  dom.newFileContentInput.value = "";
+  dom.newFileModal.classList.remove("hidden");
+  dom.newFileModal.classList.add("flex");
+  setTimeout(() => dom.newFileNameInput.focus(), 100);
+}
+
+function closeNewFileModal() {
+  dom.newFileModal.classList.add("hidden");
+  dom.newFileModal.classList.remove("flex");
+}
+
+// 当前活跃的上传控制器（支持取消上传）
+let activeUploadXhr = null;
+
+// 显示/关闭上传进度框
+function showUploadProgress(show, filename = "") {
+  if (show) {
+    dom.uploadFilename.textContent = filename;
+    dom.uploadPercentage.textContent = "0%";
+    dom.uploadProgressBar.style.width = "0%";
+    dom.uploadBytesInfo.textContent = "准备上传...";
+    dom.uploadSpeedInfo.textContent = "-- KB/s";
+    dom.uploadStatusBadge.textContent = "上传中";
+    dom.uploadStatusBadge.className = "text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 font-mono";
+    dom.uploadProgressModal.classList.remove("hidden");
+    dom.uploadProgressModal.classList.add("flex");
+  } else {
+    dom.uploadProgressModal.classList.add("hidden");
+    dom.uploadProgressModal.classList.remove("flex");
+    activeUploadXhr = null;
+  }
+}
+
+// 执行文件上传（支持任意大小大文件、断点续传/流式直传 Google Drive、实时显示进度与网速）
+async function uploadFileToDrive(file) {
+  if (!file) return;
+
+  try {
+    showUploadProgress(true, file.name);
+
+    // 步骤 1：向后端申请针对该文件的 Google Drive 专属 Resumable Upload 临时通道
+    const initRes = await fetch("/api/admin/files", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.adminToken}`,
+      },
+      body: JSON.stringify({
+        action: "init_resumable_upload",
+        name: file.name,
+        parentFolderId: state.currentFolderId || "root",
+        mimeType: file.type || "application/octet-stream",
+        fileSize: file.size,
+      }),
+    });
+
+    const initData = await initRes.json();
+    if (!initData.success || !initData.uploadUrl) {
+      throw new Error(initData.error || "未能获取 Google Drive 上传通道");
+    }
+
+    const uploadUrl = initData.uploadUrl;
+    let lastLoaded = 0;
+    let lastTime = Date.now();
+
+    // 步骤 2：直接将文件二进制流通过 XMLHttpRequest 泵入 Google Drive 上传通道
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      activeUploadXhr = xhr;
+
+      xhr.open("PUT", uploadUrl, true);
+      // Google Resumable Upload 协议标准头部
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          dom.uploadPercentage.textContent = `${percent}%`;
+          dom.uploadProgressBar.style.width = `${percent}%`;
+
+          // 计算即时传输速度
+          const now = Date.now();
+          const elapsed = (now - lastTime) / 1000;
+          if (elapsed >= 0.5) {
+            const bytesPerSec = (e.loaded - lastLoaded) / elapsed;
+            dom.uploadSpeedInfo.textContent = `${formatBytes(bytesPerSec)}/s`;
+            lastLoaded = e.loaded;
+            lastTime = now;
+          }
+
+          dom.uploadBytesInfo.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          dom.uploadStatusBadge.textContent = "上传成功";
+          dom.uploadStatusBadge.className = "text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono";
+          dom.uploadPercentage.textContent = "100%";
+          dom.uploadProgressBar.style.width = "100%";
+          resolve();
+        } else {
+          reject(new Error(`上传失败，Google Drive 状态码: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("网络传输异常，上传中断"));
+      xhr.onabort = () => reject(new Error("用户取消了上传"));
+
+      xhr.send(file);
+    });
+
+    showToast(`文件 "${file.name}" 上传成功！`);
+    setTimeout(() => {
+      showUploadProgress(false);
+      loadFolder(state.currentFolderId);
+    }, 600);
+  } catch (err) {
+    showToast(`上传异常: ${err.message}`);
+    showUploadProgress(false);
+  }
 }
 
 // 执行文件/文件夹操作（重命名、移动、删除）
@@ -1762,6 +1931,7 @@ function setupEventListeners() {
           state.isAdmin = true;
           localStorage.setItem("admin_token", data.token);
           dom.adminPasswordInput.value = "";
+          updateAdminUIState();
           showToast("管理员登录成功！");
           loadAdminDashboard();
           renderItems(); // 重新渲染列表以展示管理员专属按钮
@@ -1832,6 +2002,7 @@ function setupEventListeners() {
       state.adminToken = "";
       state.isAdmin = false;
       localStorage.removeItem("admin_token");
+      updateAdminUIState();
       dom.adminModal.classList.add("hidden");
       dom.adminModal.classList.remove("flex");
       showToast("已退出管理员模式");
@@ -1863,6 +2034,8 @@ function setupEventListeners() {
         await executeFileOperation({ action: "rename", fileId, shortcutId, newName: val });
       } else if (action === "move") {
         await executeFileOperation({ action: "move", fileId, shortcutId, targetFolderId: val });
+      } else if (action === "create_folder") {
+        await executeFileOperation({ action: "create_folder", name: val, parentFolderId: state.currentFolderId });
       }
 
       closeFileActionModal();
@@ -1871,6 +2044,81 @@ function setupEventListeners() {
 
   if (dom.cancelFileActionBtn) {
     dom.cancelFileActionBtn.addEventListener("click", closeFileActionModal);
+  }
+
+  // 管理员快捷操作栏事件绑定
+  if (dom.adminNewFolderBtn) {
+    dom.adminNewFolderBtn.addEventListener("click", () => {
+      openFileActionModal({
+        action: "create_folder",
+        title: "新建文件夹",
+        desc: "将在当前目录下创建一个新的文件夹",
+        defaultValue: "",
+        placeholder: "请输入文件夹名称",
+      });
+    });
+  }
+
+  if (dom.adminNewFileBtn) {
+    dom.adminNewFileBtn.addEventListener("click", () => {
+      openNewFileModal();
+    });
+  }
+
+  if (dom.closeNewFileModalBtn) {
+    dom.closeNewFileModalBtn.addEventListener("click", closeNewFileModal);
+  }
+  if (dom.cancelNewFileBtn) {
+    dom.cancelNewFileBtn.addEventListener("click", closeNewFileModal);
+  }
+
+  if (dom.newFileForm) {
+    dom.newFileForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fileName = dom.newFileNameInput.value.trim();
+      const fileContent = dom.newFileContentInput.value;
+      if (!fileName) {
+        showToast("文件名不能为空");
+        return;
+      }
+
+      await executeFileOperation({
+        action: "create_file",
+        name: fileName,
+        content: fileContent,
+        parentFolderId: state.currentFolderId,
+      });
+
+      closeNewFileModal();
+    });
+  }
+
+  // 上传文件事件绑定
+  if (dom.adminUploadBtn && dom.adminFileInput) {
+    dom.adminUploadBtn.addEventListener("click", () => {
+      dom.adminFileInput.value = "";
+      dom.adminFileInput.click();
+    });
+
+    dom.adminFileInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+
+      // 支持顺序依次上传选择的文件
+      for (let i = 0; i < files.length; i++) {
+        await uploadFileToDrive(files[i]);
+      }
+    });
+  }
+
+  if (dom.abortUploadBtn) {
+    dom.abortUploadBtn.addEventListener("click", () => {
+      if (activeUploadXhr) {
+        activeUploadXhr.abort();
+        showToast("已取消上传");
+        showUploadProgress(false);
+      }
+    });
   }
 
   // 键盘 Esc 关闭
