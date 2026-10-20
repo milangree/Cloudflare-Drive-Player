@@ -291,8 +291,12 @@ function renderGridView(items) {
                 <h4 class="text-sm font-medium text-slate-200 truncate group-hover:text-brand-500 transition-colors leading-tight" title="${item.name}">
                   ${item.name}
                 </h4>
-                <p class="text-xs text-slate-500 mt-1">
-                  ${item.isFolder ? "文件夹" : formatBytes(item.size)}
+                <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                  ${
+                    item.isFolder
+                      ? `<span class="text-amber-400 font-medium">${item.itemCount || 0} 个文件</span> · <span>${formatBytes(item.size)}</span>`
+                      : `<span>${formatBytes(item.size)}</span>`
+                  }
                 </p>
               </div>
             </div>
@@ -353,9 +357,14 @@ function renderListView(items) {
             <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-lg" title="${item.name}">
               ${item.name}
             </span>
+            ${
+              item.isFolder
+                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">${item.itemCount || 0} 个文件</span>`
+                : ""
+            }
           </td>
           <td class="px-4 py-2.5 text-xs text-slate-400 hidden md:table-cell">
-            ${item.isFolder ? "-" : formatBytes(item.size)}
+            ${formatBytes(item.size)}
           </td>
           <td class="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
             ${formatDate(item.modifiedTime)}

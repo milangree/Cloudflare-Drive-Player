@@ -1,5 +1,45 @@
 import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
 
+// 内存级短缓存，避免重复切换目录频繁向 Google 查询文件夹大小与数量
+const statsCache = new Map();
+const STATS_TTL = 60 * 1000; // 60 秒缓存
+
+async function getFolderStats(folderId, token) {
+  const cached = statsCache.get(folderId);
+  const now = Date.now();
+  if (cached && now - cached.timestamp < STATS_TTL) {
+    return cached.data;
+  }
+
+  try {
+    const statUrl = new URL("https://www.googleapis.com/drive/v3/files");
+    statUrl.searchParams.set("q", `'${folderId}' in parents and trashed = false`);
+    statUrl.searchParams.set("fields", "files(id,size,mimeType)");
+    statUrl.searchParams.set("pageSize", "1000");
+    statUrl.searchParams.set("supportsAllDrives", "true");
+    statUrl.searchParams.set("includeItemsFromAllDrives", "true");
+
+    const res = await fetch(statUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      return { count: 0, size: 0 };
+    }
+
+    const data = await res.json();
+    const files = data.files || [];
+    const count = files.length;
+    const size = files.reduce((acc, cur) => acc + (parseInt(cur.size, 10) || 0), 0);
+
+    const statsResult = { count, size };
+    statsCache.set(folderId, { timestamp: now, data: statsResult });
+    return statsResult;
+  } catch (_) {
+    return { count: 0, size: 0 };
+  }
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -15,7 +55,6 @@ export async function onRequestGet(context) {
     // 1. 构建查询 query
     let q = `'${folderId}' in parents and trashed = false`;
     if (search.trim()) {
-      // 如果有全局搜索词，可以在当前目录下或者全局进行名字匹配
       q = `trashed = false and name contains '${search.trim().replace(/'/g, "\\'")}'`;
     }
 
@@ -70,9 +109,7 @@ export async function onRequestGet(context) {
           const meta = await metaResp.json();
           currentFolderName = meta.name || currentFolderName;
         }
-      } catch (_) {
-        // 忽略文件夹名字获取错误，降级使用 ID
-      }
+      } catch (_) {}
     }
 
     // 3. 规范化并对文件进行分类整理
@@ -88,6 +125,7 @@ export async function onRequestGet(context) {
         name: f.name,
         mimeType: f.mimeType,
         size: f.size ? parseInt(f.size, 10) : 0,
+        itemCount: 0,
         modifiedTime: f.modifiedTime,
         thumbnailLink: f.thumbnailLink || null,
         isFolder,
@@ -97,6 +135,18 @@ export async function onRequestGet(context) {
         isDocument,
       };
     });
+
+    // 4. 并行获取所有子文件夹包含的文件数量与大小
+    const folderItems = items.filter((i) => i.isFolder);
+    if (folderItems.length > 0) {
+      await Promise.all(
+        folderItems.map(async (folder) => {
+          const stats = await getFolderStats(folder.id, token);
+          folder.itemCount = stats.count;
+          folder.size = stats.size;
+        })
+      );
+    }
 
     return new Response(
       JSON.stringify({
@@ -111,7 +161,6 @@ export async function onRequestGet(context) {
       {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
-          // 缓存 30 秒，加速用户切目录体验
           "Cache-Control": "public, max-age=30, s-maxage=30",
         },
       }
