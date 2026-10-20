@@ -47,6 +47,26 @@ export async function onRequestPost(context) {
       });
     }
 
+    // 动作：测试或更新 description / appProperties
+    if (action === "test_meta") {
+      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name,description,appProperties,properties`;
+      const res = await fetch(patchUrl, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${googleToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          description: "CF_CONFIG_TEST:" + Date.now(),
+          properties: { testKey: "testValue" },
+        }),
+      });
+      const data = await res.json();
+      return new Response(JSON.stringify({ success: res.ok, status: res.status, data }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // 动作 2：移动文件或文件夹
     if (action === "move") {
       if (!fileId || !targetFolderId) {
