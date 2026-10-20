@@ -14,11 +14,13 @@ const memoryConfig = {
  * 获取完整配置
  */
 export async function getSystemConfig(env) {
+  // 默认不开启访问密码（即 requirePassword 默认为 false，除非在后台显式勾选开启，或配置了 REQUIRE_ACCESS_PASSWORD=true）
+  const envRequirePassword = env.REQUIRE_ACCESS_PASSWORD === "true" || env.REQUIRE_ACCESS_PASSWORD === "1";
   let config = {
     siteName: (env.SITE_NAME || "").trim(),
     accessPassword: (env.ACCESS_PASSWORD || "").trim(),
     adminPassword: (env.ADMIN_PASSWORD || "admin").trim(),
-    requirePassword: Boolean(env.ACCESS_PASSWORD && env.ACCESS_PASSWORD.trim()),
+    requirePassword: envRequirePassword,
   };
 
   // 1. 如果绑定了 Cloudflare KV (如 DRIVE_KV)
