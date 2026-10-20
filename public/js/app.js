@@ -885,9 +885,10 @@ function playAdjacentEpisode(direction = 1) {
     return;
   }
 
-  const nextItem = playlist[targetIndex];
-  showToast(`正在播放下一集: ${nextItem.name.replace(/\.[a-zA-Z0-9]+$/, "")}`);
-  openMediaPlayer(nextItem);
+  const targetItem = playlist[targetIndex];
+  const actionText = direction > 0 ? "下一集" : "上一集";
+  showToast(`正在播放${actionText}: ${targetItem.name.replace(/\.[a-zA-Z0-9]+$/, "")}`);
+  openMediaPlayer(targetItem);
 }
 
 // 更新连播与上一集/下一集按钮状态
