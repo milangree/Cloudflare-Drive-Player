@@ -74,28 +74,6 @@
           <i data-lucide="layout-grid" class="w-4 h-4" id="view-icon"></i>
         </button>
 
-        <!-- 管理员快捷操作区（仅登录管理员显示） -->
-        <div id="admin-quick-actions" class="hidden items-center gap-1.5 sm:gap-2 border-l border-slate-800/80 pl-2 sm:pl-3">
-          <!-- 上传文件 -->
-          <button id="admin-upload-btn" title="上传文件到当前目录" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 text-brand-400 hover:text-brand-300 text-xs font-medium transition-colors">
-            <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
-            <span class="hidden md:inline">上传</span>
-          </button>
-          <input type="file" id="admin-file-input" class="hidden" multiple />
-
-          <!-- 新建文件夹 -->
-          <button id="admin-new-folder-btn" title="新建文件夹" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white text-xs font-medium transition-colors">
-            <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-amber-400"></i>
-            <span class="hidden md:inline">新建文件夹</span>
-          </button>
-
-          <!-- 新建文件 -->
-          <button id="admin-new-file-btn" title="新建文件" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white text-xs font-medium transition-colors">
-            <i data-lucide="file-plus" class="w-3.5 h-3.5 text-sky-400"></i>
-            <span class="hidden md:inline">新建文件</span>
-          </button>
-        </div>
-
         <!-- 后台管理按钮 -->
         <button id="admin-entry-btn" title="后台管理" class="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-brand-400 transition-colors">
           <i data-lucide="settings" class="w-4 h-4"></i>
@@ -624,8 +602,62 @@
     </div>
   </div>
 
+  <!-- 页面右下角管理员专属浮动操作按钮 (FAB) -->
+  <div id="admin-fab-container" class="fixed right-6 bottom-6 z-40 hidden flex-col items-end gap-3 select-none">
+    <!-- 展开的操作菜单项 -->
+    <div id="admin-fab-menu" class="hidden flex-col items-end gap-2.5 transition-all duration-200 opacity-0 translate-y-3 pointer-events-none">
+      <!-- 1. 上传文件 -->
+      <button 
+        id="fab-upload-btn" 
+        class="flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-slate-900 border border-brand-500/40 text-slate-100 hover:bg-slate-800 shadow-xl hover:shadow-brand-500/10 hover:border-brand-500 transition-all text-xs font-medium group"
+        title="上传文件到当前目录"
+      >
+        <span class="text-slate-300 group-hover:text-white transition-colors">上传文件</span>
+        <div class="w-7 h-7 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center group-hover:bg-brand-500 group-hover:text-white transition-colors">
+          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+        </div>
+      </button>
+
+      <!-- 2. 新建文件夹 -->
+      <button 
+        id="fab-new-folder-btn" 
+        class="flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-slate-900 border border-slate-700 text-slate-100 hover:bg-slate-800 shadow-xl hover:border-amber-400 transition-all text-xs font-medium group"
+        title="新建文件夹"
+      >
+        <span class="text-slate-300 group-hover:text-white transition-colors">新建文件夹</span>
+        <div class="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-colors">
+          <i data-lucide="folder-plus" class="w-4 h-4"></i>
+        </div>
+      </button>
+
+      <!-- 3. 新建文件 -->
+      <button 
+        id="fab-new-file-btn" 
+        class="flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-slate-900 border border-slate-700 text-slate-100 hover:bg-slate-800 shadow-xl hover:border-sky-400 transition-all text-xs font-medium group"
+        title="新建文件"
+      >
+        <span class="text-slate-300 group-hover:text-white transition-colors">新建文件</span>
+        <div class="w-7 h-7 rounded-full bg-sky-500/20 text-sky-400 flex items-center justify-center group-hover:bg-sky-500 group-hover:text-white transition-colors">
+          <i data-lucide="file-plus" class="w-4 h-4"></i>
+        </div>
+      </button>
+    </div>
+
+    <!-- 隐藏的文件选择器 -->
+    <input type="file" id="admin-file-input" class="hidden" multiple />
+
+    <!-- 核心浮动主按钮（+号 / ×号） -->
+    <button 
+      id="admin-fab-toggle-btn" 
+      class="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white shadow-2xl shadow-brand-500/40 flex items-center justify-center transition-all duration-300 transform hover:scale-105 active:scale-95 focus:outline-none ring-4 ring-brand-500/20"
+      title="管理员操作"
+    >
+      <i data-lucide="plus" id="admin-fab-icon" class="w-6 h-6 transition-transform duration-300"></i>
+    </button>
+  </div>
+
   <!-- 轻量全局 Toast 提示 -->
-  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 border border-brand-500/40 text-slate-100 text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
+  <div id="toast" class="fixed bottom-6 left-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 border border-brand-500/40 text-slate-100 text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
     <i data-lucide="check-circle" class="w-4 h-4 text-brand-500"></i>
     <span id="toast-message">提示内容</span>
   </div>

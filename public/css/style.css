@@ -129,3 +129,15 @@
 .file-row:hover {
   background-color: rgba(255, 255, 255, 0.04);
 }
+
+/* 浮动操作按钮 (+号) 旋转动画与菜单状态 */
+#admin-fab-toggle-btn.fab-active #admin-fab-icon {
+  transform: rotate(135deg);
+}
+
+#admin-fab-menu.fab-menu-open {
+  display: flex !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  pointer-events: auto !important;
+}

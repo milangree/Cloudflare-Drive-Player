@@ -73,12 +73,14 @@ const dom = {
   fileActionInput: document.getElementById("file-action-input"),
   cancelFileActionBtn: document.getElementById("cancel-file-action-btn"),
   confirmFileActionBtn: document.getElementById("confirm-file-action-btn"),
-  // 管理员快捷操作区
-  adminQuickActions: document.getElementById("admin-quick-actions"),
-  adminUploadBtn: document.getElementById("admin-upload-btn"),
+  // 管理员浮动 + 号操作按钮与菜单 (FAB)
+  adminFabContainer: document.getElementById("admin-fab-container"),
+  adminFabToggleBtn: document.getElementById("admin-fab-toggle-btn"),
+  adminFabMenu: document.getElementById("admin-fab-menu"),
+  fabUploadBtn: document.getElementById("fab-upload-btn"),
+  fabNewFolderBtn: document.getElementById("fab-new-folder-btn"),
+  fabNewFileBtn: document.getElementById("fab-new-file-btn"),
   adminFileInput: document.getElementById("admin-file-input"),
-  adminNewFolderBtn: document.getElementById("admin-new-folder-btn"),
-  adminNewFileBtn: document.getElementById("admin-new-file-btn"),
   // 新建文件模态框
   newFileModal: document.getElementById("new-file-modal"),
   closeNewFileModalBtn: document.getElementById("close-new-file-modal-btn"),
@@ -296,19 +298,43 @@ async function checkSystemInfo() {
   }
 }
 
-// 更新管理员特权 UI 状态（显隐快捷操作栏）
+// 更新管理员特权 UI 状态（显隐右下角浮动 + 号主按钮）
 function updateAdminUIState() {
   const hasAdmin = Boolean(state.adminToken);
   state.isAdmin = hasAdmin;
-  if (dom.adminQuickActions) {
+  if (dom.adminFabContainer) {
     if (hasAdmin) {
-      dom.adminQuickActions.classList.remove("hidden");
-      dom.adminQuickActions.classList.add("flex");
+      dom.adminFabContainer.classList.remove("hidden");
+      dom.adminFabContainer.classList.add("flex");
     } else {
-      dom.adminQuickActions.classList.add("hidden");
-      dom.adminQuickActions.classList.remove("flex");
+      dom.adminFabContainer.classList.add("hidden");
+      dom.adminFabContainer.classList.remove("flex");
+      closeFabMenu();
     }
   }
+}
+
+// 展开/收起浮动操作菜单
+function toggleFabMenu() {
+  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
+  const isOpen = dom.adminFabMenu.classList.contains("fab-menu-open");
+  if (isOpen) {
+    closeFabMenu();
+  } else {
+    openFabMenu();
+  }
+}
+
+function openFabMenu() {
+  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
+  dom.adminFabMenu.classList.add("fab-menu-open");
+  dom.adminFabToggleBtn.classList.add("fab-active");
+}
+
+function closeFabMenu() {
+  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
+  dom.adminFabMenu.classList.remove("fab-menu-open");
+  dom.adminFabToggleBtn.classList.remove("fab-active");
 }
 
 // 打开/切换后台管理窗口
@@ -2046,9 +2072,24 @@ function setupEventListeners() {
     dom.cancelFileActionBtn.addEventListener("click", closeFileActionModal);
   }
 
-  // 管理员快捷操作栏事件绑定
-  if (dom.adminNewFolderBtn) {
-    dom.adminNewFolderBtn.addEventListener("click", () => {
+  // 管理员浮动 + 号 (FAB) 操作与菜单事件绑定
+  if (dom.adminFabToggleBtn) {
+    dom.adminFabToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFabMenu();
+    });
+  }
+
+  // 点击页面任意其它区域自动收起浮动菜单
+  document.addEventListener("click", (e) => {
+    if (dom.adminFabContainer && !dom.adminFabContainer.contains(e.target)) {
+      closeFabMenu();
+    }
+  });
+
+  if (dom.fabNewFolderBtn) {
+    dom.fabNewFolderBtn.addEventListener("click", () => {
+      closeFabMenu();
       openFileActionModal({
         action: "create_folder",
         title: "新建文件夹",
@@ -2059,9 +2100,30 @@ function setupEventListeners() {
     });
   }
 
-  if (dom.adminNewFileBtn) {
-    dom.adminNewFileBtn.addEventListener("click", () => {
+  if (dom.fabNewFileBtn) {
+    dom.fabNewFileBtn.addEventListener("click", () => {
+      closeFabMenu();
       openNewFileModal();
+    });
+  }
+
+  if (dom.fabUploadBtn && dom.adminFileInput) {
+    dom.fabUploadBtn.addEventListener("click", () => {
+      closeFabMenu();
+      dom.adminFileInput.value = "";
+      dom.adminFileInput.click();
+    });
+  }
+
+  if (dom.adminFileInput) {
+    dom.adminFileInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+
+      // 支持顺序依次上传选择的文件
+      for (let i = 0; i < files.length; i++) {
+        await uploadFileToDrive(files[i]);
+      }
     });
   }
 
@@ -2090,24 +2152,6 @@ function setupEventListeners() {
       });
 
       closeNewFileModal();
-    });
-  }
-
-  // 上传文件事件绑定
-  if (dom.adminUploadBtn && dom.adminFileInput) {
-    dom.adminUploadBtn.addEventListener("click", () => {
-      dom.adminFileInput.value = "";
-      dom.adminFileInput.click();
-    });
-
-    dom.adminFileInput.addEventListener("change", async (e) => {
-      const files = Array.from(e.target.files || []);
-      if (!files.length) return;
-
-      // 支持顺序依次上传选择的文件
-      for (let i = 0; i < files.length; i++) {
-        await uploadFileToDrive(files[i]);
-      }
     });
   }
 
