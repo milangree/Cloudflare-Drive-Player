@@ -4,16 +4,19 @@ pages_build_output_dir = "public"
 
 # ==============================================================================
 # Cloudflare KV 命名空间绑定 (可选配，用于毫秒级加速系统配置与密码读取)
-# 
-# 使用说明：
-# 1. 登录 Cloudflare 控制台创建 KV 命名空间（或执行 npx wrangler kv:namespace create DRIVE_KV）
-# 2. 将下方 kv_namespaces 中的 id 与 preview_id 替换为您创建的真实 KV ID
-# 3. 在 Cloudflare Pages 后台 Settings -> Functions -> KV namespace bindings 中绑定：
-#    - Variable name (变量名): DRIVE_KV
-#    - KV namespace: 选择您创建的命名空间
+#
+# 【注意】当项目根目录存在 wrangler.toml 时，Cloudflare Pages 会自动接管绑定管理，
+# 控制台界面中的手动添加绑定将被锁定。所有的绑定必须在下方文件中直接配置：
+#
+# 配置步骤：
+# 1. 登录 Cloudflare 控制台 -> Workers & Pages -> KV，创建一个命名空间（如 cf-drive-player-kv）
+# 2. 复制创建后列表里显示的 Namespace ID（32 位长字符串）
+# 3. 将下方 id 替换为您真实的 KV Namespace ID，提交推送到 Git 仓库即可秒级自动生效！
+#
+# 如果您暂未创建 KV，保持下方注释状态即可，系统会自动使用 Google Drive 元数据进行持久化。
 # ==============================================================================
-[[kv_namespaces]]
-binding = "DRIVE_KV"
-id = "YOUR_KV_NAMESPACE_ID"
-preview_id = "YOUR_KV_PREVIEW_ID"
 
+# 若要启用 KV 绑定，请取消下方 3 行的注释并将 id 替换为您在 Cloudflare 创建的真实 KV ID：
+# [[kv_namespaces]]
+# binding = "DRIVE_KV"
+# id = "替换为你的KV命名空间ID_例如_6234abcd5678ef901234567890abcdef"

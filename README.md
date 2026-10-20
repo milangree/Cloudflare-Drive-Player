@@ -114,13 +114,21 @@ npm run deploy
 
 > 💡 **系统内置持久化存储机制**：
 > * **开箱即用（免配 KV）**：系统已内置 Google Drive 根文件夹元数据 properties 机制，自动持久化存储后台配置与密码，重启与冷启动永不丢失！
-> * **进阶加速（绑定 Cloudflare KV）**：若希望利用 Cloudflare 边缘节点就近毫秒级响应，可按以下步骤绑定 KV：
->   1. 前往 Cloudflare Dashboard -> **Workers & Pages** -> **KV**，点击 **Create Namespace** 创建命名空间（例如 `cf-drive-player-kv`）。
->   2. 返回 Pages 项目 -> **Settings** -> **Functions** -> 下拉找到 **KV namespace bindings**。
->   3. 点击 **Add binding**：
->      - **Variable name (变量名)**：必须准确填写 `DRIVE_KV`（区分大小写）。
->      - **KV namespace (命名空间)**：下拉选择刚创建的 `cf-drive-player-kv`。
->   4. 点击保存后，在最新部署右侧点击 **Retry deployment (重新部署)** 即可激活。登录后台管理窗口将看到绿色的 `KV: ACTIVE` 状态标记。
+> * **进阶加速（通过 `wrangler.toml` 绑定 Cloudflare KV）**：
+>   > ⚠️ **关于控制台提示「此项目的绑定在通过 wrangler.toml 进行管理」**：
+>   > Cloudflare Pages 具备 **“代码即配置 (Configuration as Code)”** 机制。一旦代码仓库根目录存在 `wrangler.toml` 文件，系统会自动锁定网页控制台中的绑定按钮，转由代码库中的 `wrangler.toml` 统一管理。
+>   
+>   **启用 KV 绑定的极简 3 步**：
+>   1. **创建 KV 命名空间**：前往 [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **Workers & Pages** -> **KV**，点击 **Create Namespace**（例如命名为 `cf-drive-player-kv`）。
+>   2. **获取 Namespace ID**：在 KV 列表中找到刚创建的命名空间，复制其右侧的 **ID**（形如 `8a3b5c7d9e0f...` 的 32 位哈希串）。
+>   3. **配置 `wrangler.toml` 并推送**：
+>      打开项目根目录的 `wrangler.toml`，取消注释并填入你的 ID：
+>      ```toml
+>      [[kv_namespaces]]
+>      binding = "DRIVE_KV"
+>      id = "你的KV命名空间真实ID"
+>      ```
+>      提交并推送到 GitHub，Cloudflare Pages 会自动触发构建并完成 KV 挂载！登录后台管理窗口将看到绿色的 `KV: ACTIVE` 状态标记。
 
 > 💡 **跨盘与多盘使用技巧（方案 A）**：
 > 1. 在 Google Drive 建一个总目录（例如 `我的影音库`），将其 ID 填入 `ROOT_FOLDER_ID`。
