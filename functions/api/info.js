@@ -43,7 +43,6 @@ export async function onRequestGet(context) {
         rootName,
         clientEmail: creds.clientEmail ? creds.clientEmail.replace(/(.{3}).*(@.*)/, "$1***$2") : null,
         requirePassword: Boolean(sysConfig.requirePassword && (sysConfig.accessPassword || "").trim()),
-        _debugAdminPass: sysConfig.adminPassword || "none",
       }),
       {
         headers: noCacheHeaders,

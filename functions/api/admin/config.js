@@ -47,7 +47,15 @@ export async function onRequest(context) {
       }
 
       const res = await saveSystemConfig(env, updateData);
-      return new Response(JSON.stringify({ success: true, persisted: res.persisted }), {
+
+      // 如果修改了管理员密码，用新密码重新为当前管理员签发最新 Token 返回，避免旧 Token 签名失效
+      let newToken = null;
+      if (updateData.adminPassword) {
+        const { generateToken } = await import("../../utils/configManager.js");
+        newToken = await generateToken({ role: "admin" }, updateData.adminPassword);
+      }
+
+      return new Response(JSON.stringify({ success: true, persisted: res.persisted, newToken }), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {

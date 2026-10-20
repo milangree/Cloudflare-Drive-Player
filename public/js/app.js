@@ -1807,6 +1807,10 @@ function setupEventListeners() {
           }
           if (newAdminPassword) {
             dom.cfgNewAdminPassword.value = "";
+            if (data.newToken) {
+              state.adminToken = data.newToken;
+              localStorage.setItem("admin_token", data.newToken);
+            }
           }
         } else {
           showToast("保存失败: " + (data.error || "未知原因"));
