@@ -355,6 +355,12 @@ function openAdminModal() {
   }
 }
 
+function closeAdminModal() {
+  if (!dom.adminModal) return;
+  dom.adminModal.classList.add("hidden");
+  dom.adminModal.classList.remove("flex");
+}
+
 // 加载后台面板数据
 async function loadAdminDashboard() {
   dom.adminLoginPanel.classList.add("hidden");
@@ -1932,9 +1938,16 @@ function setupEventListeners() {
   }
 
   if (dom.closeAdminBtn) {
-    dom.closeAdminBtn.addEventListener("click", () => {
-      dom.adminModal.classList.add("hidden");
-      dom.adminModal.classList.remove("flex");
+    dom.closeAdminBtn.addEventListener("click", closeAdminModal);
+  }
+
+  // 点击外部遮罩层自动平滑关闭后台管理窗口
+  if (dom.adminModal) {
+    dom.adminModal.addEventListener("click", (e) => {
+      // 严格判定：当且仅当点击事件的目标为最外层遮罩容器自身时触发关闭，内部所有交互均不会误触
+      if (e.target === dom.adminModal) {
+        closeAdminModal();
+      }
     });
   }
 
@@ -2170,6 +2183,7 @@ function setupEventListeners() {
     if (e.key === "Escape") {
       closePlayer();
       closeImagePreview();
+      closeAdminModal();
     }
   });
 
