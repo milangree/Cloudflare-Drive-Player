@@ -107,6 +107,32 @@ function getHighResThumb(item, size = 640) {
   return item.thumbnailLink.replace(/=s\d+.*$/, `=s${size}`);
 }
 
+// 获取视频清晰度 / 分辨率标识
+function getVideoResolution(item) {
+  if (!item.isVideo) return null;
+
+  // 1. 优先读取 Google Drive API 返回的真实元数据
+  if (item.videoMediaMetadata) {
+    const { width, height } = item.videoMediaMetadata;
+    if (height && width) {
+      if (height >= 2100 || width >= 3800) return "4K";
+      if (height >= 1400 || width >= 2500) return "2K";
+      if (height >= 1000 || width >= 1900) return "1080P";
+      if (height >= 700 || width >= 1200) return "720P";
+      if (height >= 450) return "480P";
+      return `${height}P`;
+    }
+  }
+
+  // 2. 从文件名中智能正则匹配（如 1080p, 4k, 2160p 等）
+  const match = item.name.match(/(4k|2160p|1440p|2k|1080p|720p|480p|360p)/i);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+
+  return null;
+}
+
 // 辅助工具：全局 Toast
 let toastTimer = null;
 function showToast(message) {
@@ -250,6 +276,7 @@ function renderGridView(items) {
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 640);
       const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
+      const resBadge = getVideoResolution(item);
 
       // 缩略图海报区域 (视频或图片)
       let mediaPosterHtml = "";
@@ -266,11 +293,10 @@ function renderGridView(items) {
                   </div>`
                 : ""
             }
-            ${
-              ext
-                ? `<span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-black/75 backdrop-blur text-white rounded">${ext}</span>`
-                : ""
-            }
+            <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+              ${ext ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-black/80 backdrop-blur text-white rounded shadow-sm">${ext}</span>` : ""}
+              ${resBadge ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-brand-500/90 backdrop-blur text-white rounded shadow-sm">${resBadge}</span>` : ""}
+            </div>
           </div>
         `;
       }
@@ -341,6 +367,8 @@ function renderListView(items) {
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 120);
+      const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
+      const resBadge = getVideoResolution(item);
 
       return `
         <tr class="file-row cursor-pointer group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
@@ -357,6 +385,16 @@ function renderListView(items) {
             <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-lg" title="${item.name}">
               ${item.name}
             </span>
+            ${
+              ext && item.isVideo
+                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">${ext}</span>`
+                : ""
+            }
+            ${
+              resBadge
+                ? `<span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30 font-bold">${resBadge}</span>`
+                : ""
+            }
             ${
               item.isFolder
                 ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">${item.itemCount || 0} 个文件</span>`
@@ -498,7 +536,8 @@ function openMediaPlayer(item) {
   state.activeMediaItem = item;
   state.isGooglePreview = false;
 
-  dom.playerFileName.textContent = item.name;
+  const resBadge = getVideoResolution(item);
+  dom.playerFileName.textContent = `${item.name}${resBadge ? ` [${resBadge}]` : ""}`;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
 
   const streamUrl = `${window.location.origin}/api/stream/${item.id}`;

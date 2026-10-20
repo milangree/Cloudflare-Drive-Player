@@ -128,6 +128,7 @@ export async function onRequestGet(context) {
         itemCount: 0,
         modifiedTime: f.modifiedTime,
         thumbnailLink: f.thumbnailLink || null,
+        videoMediaMetadata: f.videoMediaMetadata || null,
         isFolder,
         isVideo,
         isAudio,
