@@ -126,10 +126,12 @@ export async function onRequestGet(context) {
       } catch (_) {}
     }
 
-    // 3. 规范化并对文件进行分类整理（支持快捷方式穿透解析）
-    const items = (data.files || []).map((f) => {
-      let targetId = f.id;
-      let targetMimeType = f.mimeType;
+    // 3. 规范化并对文件进行分类整理（支持快捷方式穿透解析，并过滤内部系统配置文件）
+    const items = (data.files || [])
+      .filter((f) => f.name !== ".cf_drive_config.json")
+      .map((f) => {
+        let targetId = f.id;
+        let targetMimeType = f.mimeType;
 
       // 如果是 Google Drive 快捷方式，自动穿透解析目标真实 ID 与类型
       if (f.mimeType === "application/vnd.google-apps.shortcut" && f.shortcutDetails) {
