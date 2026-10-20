@@ -1,0 +1,13 @@
+{
+  "name": "cf-pages-drive-player",
+  "version": "1.0.0",
+  "description": "基于 Cloudflare Pages & Google Service Account 的轻量级 Google Drive 目录索引与流媒体播放器",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}
