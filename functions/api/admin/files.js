@@ -27,7 +27,7 @@ export async function onRequestPost(context) {
         return new Response(JSON.stringify({ success: false, error: "缺少文件 ID 或新名称" }), { status: 400 });
       }
 
-      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name`;
+      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name,driveId,owners,sharedWithMeTime`;
       const res = await fetch(patchUrl, {
         method: "PATCH",
         headers: {
