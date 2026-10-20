@@ -323,8 +323,8 @@ async function loadAdminDashboard() {
 }
 
 // 打开文件操作模态框 (重命名 / 移动)
-function openFileActionModal({ action, title, desc, defaultValue = "", placeholder = "", fileId }) {
-  currentFileAction = { action, fileId };
+function openFileActionModal({ action, title, desc, defaultValue = "", placeholder = "", fileId, shortcutId = "" }) {
+  currentFileAction = { action, fileId, shortcutId };
   dom.fileActionTitle.textContent = title;
   dom.fileActionDesc.textContent = desc;
   dom.fileActionInput.value = defaultValue;
@@ -385,7 +385,7 @@ async function loadFolder(folderId, searchKeyword = "") {
   showLoading(true);
   state.currentPage = 1;
   try {
-    let url = `/api/list?folderId=${encodeURIComponent(folderId)}`;
+    let url = `/api/list?folderId=${encodeURIComponent(folderId)}&_t=${Date.now()}`;
     if (searchKeyword.trim()) {
       url += `&search=${encodeURIComponent(searchKeyword.trim())}`;
     }
@@ -742,13 +742,13 @@ function renderGridView(items) {
               ${
                 state.isAdmin
                   ? `
-                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-name="${item.name}" title="重命名">
+                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="重命名">
                       <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 admin-move-btn" data-id="${item.id}" data-name="${item.name}" title="移动到...">
+                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 admin-move-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="移动到...">
                       <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-name="${item.name}" title="删除">
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="删除">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                     </button>
                   `
@@ -838,13 +838,13 @@ function renderListView(items) {
               ${
                 state.isAdmin
                   ? `
-                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-name="${item.name}" title="重命名">
+                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="重命名">
                       <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 text-slate-400 admin-move-btn" data-id="${item.id}" data-name="${item.name}" title="移动到...">
+                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 text-slate-400 admin-move-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="移动到...">
                       <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-name="${item.name}" title="删除">
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="删除">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                     </button>
                   `
@@ -922,6 +922,7 @@ function bindItemEvents(container) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
+      const shortcutId = btn.getAttribute("data-shortcut-id") || "";
       const currentName = btn.getAttribute("data-name");
       openFileActionModal({
         action: "rename",
@@ -929,6 +930,7 @@ function bindItemEvents(container) {
         desc: `当前名称: ${currentName}`,
         defaultValue: currentName,
         fileId,
+        shortcutId,
       });
     });
   });
@@ -938,6 +940,7 @@ function bindItemEvents(container) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
+      const shortcutId = btn.getAttribute("data-shortcut-id") || "";
       const currentName = btn.getAttribute("data-name");
       openFileActionModal({
         action: "move",
@@ -946,6 +949,7 @@ function bindItemEvents(container) {
         defaultValue: "",
         placeholder: "输入目标文件夹 ID (如 1xyzABC...)",
         fileId,
+        shortcutId,
       });
     });
   });
@@ -955,9 +959,10 @@ function bindItemEvents(container) {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
+      const shortcutId = btn.getAttribute("data-shortcut-id") || "";
       const currentName = btn.getAttribute("data-name");
       if (confirm(`确定要将「${currentName}」移入回收站吗？`)) {
-        await executeFileOperation({ action: "delete", fileId });
+        await executeFileOperation({ action: "delete", fileId, shortcutId });
       }
     });
   });
@@ -1852,11 +1857,12 @@ function setupEventListeners() {
 
       const action = currentFileAction.action;
       const fileId = currentFileAction.fileId;
+      const shortcutId = currentFileAction.shortcutId;
 
       if (action === "rename") {
-        await executeFileOperation({ action: "rename", fileId, newName: val });
+        await executeFileOperation({ action: "rename", fileId, shortcutId, newName: val });
       } else if (action === "move") {
-        await executeFileOperation({ action: "move", fileId, targetFolderId: val });
+        await executeFileOperation({ action: "move", fileId, shortcutId, targetFolderId: val });
       }
 
       closeFileActionModal();

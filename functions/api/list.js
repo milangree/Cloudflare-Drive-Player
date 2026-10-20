@@ -147,6 +147,7 @@ export async function onRequestGet(context) {
 
       return {
         id: targetId,
+        shortcutId: f.mimeType === "application/vnd.google-apps.shortcut" ? f.id : null,
         name: f.name,
         mimeType: targetMimeType,
         size: f.size ? parseInt(f.size, 10) : 0,
@@ -187,7 +188,7 @@ export async function onRequestGet(context) {
       {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
-          "Cache-Control": "public, max-age=30, s-maxage=30",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
         },
       }
     );

@@ -46,34 +46,66 @@ export async function onRequestPost(context) {
 
     // 动作 1：重命名文件或文件夹
     if (action === "rename") {
-      if (!fileId || !newName || !newName.trim()) {
+      const { fileId, shortcutId, newName } = body;
+      const targetName = (newName || "").trim();
+      if ((!fileId && !shortcutId) || !targetName) {
         return new Response(JSON.stringify({ success: false, error: "缺少文件 ID 或新名称" }), { status: 400 });
       }
 
-      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name,driveId,owners,sharedWithMeTime`;
-      const res = await fetch(patchUrl, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${googleToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: newName.trim() }),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        return new Response(
-          JSON.stringify({ success: false, error: `Google Drive API 重命名失败 (${res.status}): ${errText}` }),
-          { status: res.status, headers: { "Content-Type": "application/json" } }
-        );
+      let renamedShortcut = null;
+      // 1. 如果有快捷方式 ID，优先重命名快捷方式本身（这样在当前目录和 Google Drive 里才能立即看到新名字）
+      if (shortcutId) {
+        try {
+          const sUrl = `https://www.googleapis.com/drive/v3/files/${shortcutId}?supportsAllDrives=true&fields=id,name`;
+          const sRes = await fetch(sUrl, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: targetName }),
+          });
+          if (sRes.ok) renamedShortcut = await sRes.json();
+        } catch (_) {}
       }
 
-      const updatedData = await res.json();
+      // 2. 重命名目标文件/目标文件夹 (如果提供了 fileId，且与 shortcutId 不同)
+      let renamedTarget = null;
+      const targetId = fileId && fileId !== shortcutId ? fileId : (!shortcutId ? fileId : null);
+      if (targetId) {
+        try {
+          const tUrl = `https://www.googleapis.com/drive/v3/files/${targetId}?supportsAllDrives=true&fields=id,name,mimeType,shortcutDetails`;
+          const tRes = await fetch(tUrl, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ name: targetName }),
+          });
+          if (tRes.ok) {
+            renamedTarget = await tRes.json();
+            // 如果传入的 targetId 本身是 shortcut，并且它有 targetId，连带重命名真实目标
+            if (renamedTarget.mimeType === "application/vnd.google-apps.shortcut" && renamedTarget.shortcutDetails?.targetId) {
+              try {
+                await fetch(`https://www.googleapis.com/drive/v3/files/${renamedTarget.shortcutDetails.targetId}?supportsAllDrives=true`, {
+                  method: "PATCH",
+                  headers: { Authorization: `Bearer ${googleToken}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: targetName }),
+                });
+              } catch (_) {}
+            }
+          } else if (!renamedShortcut) {
+            const errText = await tRes.text();
+            return new Response(
+              JSON.stringify({ success: false, error: `Google Drive API 重命名失败 (${tRes.status}): ${errText}` }),
+              { status: tRes.status, headers: { "Content-Type": "application/json" } }
+            );
+          }
+        } catch (err) {
+          if (!renamedShortcut) throw err;
+        }
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
           message: "重命名成功",
-          file: updatedData,
+          file: renamedShortcut || renamedTarget,
         }),
         { headers: { "Content-Type": "application/json" } }
       );
@@ -81,14 +113,16 @@ export async function onRequestPost(context) {
 
     // 动作 2：移动文件或文件夹
     if (action === "move") {
-      if (!fileId || !targetFolderId) {
+      const { fileId, shortcutId, targetFolderId } = body;
+      const moveId = shortcutId || fileId;
+      if (!moveId || !targetFolderId) {
         return new Response(JSON.stringify({ success: false, error: "缺少文件 ID 或目标文件夹 ID" }), { status: 400 });
       }
 
       // 提取文件当前所在父级
       let removeParents = "";
       try {
-        const getUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=parents`;
+        const getUrl = `https://www.googleapis.com/drive/v3/files/${moveId}?supportsAllDrives=true&fields=parents`;
         const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${googleToken}` } });
         if (getRes.ok) {
           const fileInfo = await getRes.json();
@@ -98,7 +132,7 @@ export async function onRequestPost(context) {
         }
       } catch (_) {}
 
-      const moveUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+      const moveUrl = new URL(`https://www.googleapis.com/drive/v3/files/${moveId}`);
       moveUrl.searchParams.set("supportsAllDrives", "true");
       moveUrl.searchParams.set("addParents", targetFolderId);
       if (removeParents) {
@@ -126,22 +160,22 @@ export async function onRequestPost(context) {
 
     // 动作 3：删除文件或文件夹 (移入回收站或直接删除)
     if (action === "delete") {
-      if (!fileId) {
+      const { fileId, shortcutId, permanent } = body;
+      const delId = shortcutId || fileId;
+      if (!delId) {
         return new Response(JSON.stringify({ success: false, error: "缺少待删除文件 ID" }), { status: 400 });
       }
 
-      // 安全起见先移入回收站 trashed = true，支持物理彻底删除 (永久删除)
-      const isPermanent = body.permanent === true;
-
+      const isPermanent = permanent === true;
       let res;
       if (isPermanent) {
-        const delUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`;
+        const delUrl = `https://www.googleapis.com/drive/v3/files/${delId}?supportsAllDrives=true`;
         res = await fetch(delUrl, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${googleToken}` },
         });
       } else {
-        const trashUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`;
+        const trashUrl = `https://www.googleapis.com/drive/v3/files/${delId}?supportsAllDrives=true`;
         res = await fetch(trashUrl, {
           method: "PATCH",
           headers: {
