@@ -246,6 +246,19 @@
             </div>
           </div>
 
+          <!-- 同名/连续剧自动连播按钮 -->
+          <button id="player-autoplay-toggle-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1" title="自动连播: 开启后播完自动播放下一集">
+            <i data-lucide="repeat" class="w-4 h-4" id="player-autoplay-icon"></i>
+            <span class="text-[11px] font-medium hidden sm:inline" id="player-autoplay-text">连播: 开</span>
+          </button>
+          <!-- 切换上一集与下一集按钮 -->
+          <button id="player-prev-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="上一集">
+            <i data-lucide="skip-back" class="w-4 h-4"></i>
+          </button>
+          <button id="player-next-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="下一集">
+            <i data-lucide="skip-forward" class="w-4 h-4"></i>
+          </button>
+
           <a id="player-download-btn" href="#" target="_blank" download class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="下载原文件">
             <i data-lucide="download" class="w-4 h-4"></i>
           </a>

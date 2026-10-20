@@ -15,6 +15,7 @@ const state = {
   searchQuery: "",
   pageSize: localStorage.getItem("page_size") === "all" ? "all" : (parseInt(localStorage.getItem("page_size"), 10) || 30),
   currentPage: 1,
+  autoPlayNext: localStorage.getItem("auto_play_next") !== "false", // 默认开启同名/连续剧自动连播
   playerInstance: null,
   activeMediaItem: null,
   isGooglePreview: false,
@@ -52,6 +53,11 @@ const dom = {
   playerCopyLinkBtn: document.getElementById("player-copy-link-btn"),
   playerMaximizeBtn: document.getElementById("player-maximize-btn"),
   playerMaximizeIcon: document.getElementById("player-maximize-icon"),
+  playerAutoplayToggleBtn: document.getElementById("player-autoplay-toggle-btn"),
+  playerAutoplayIcon: document.getElementById("player-autoplay-icon"),
+  playerAutoplayText: document.getElementById("player-autoplay-text"),
+  playerPrevBtn: document.getElementById("player-prev-btn"),
+  playerNextBtn: document.getElementById("player-next-btn"),
   closePlayerBtn: document.getElementById("close-player-btn"),
   streamSourceToggleBtn: document.getElementById("stream-source-toggle-btn"),
   streamSourceText: document.getElementById("stream-source-text"),
@@ -830,6 +836,111 @@ function updateStreamSourceUI() {
   }
 }
 
+// 获取同名/连续剧剧集列表（或者当前文件夹内的媒体列表），按集数自然升序排列
+function getEpisodePlaylist(currentItem) {
+  if (!currentItem) return [];
+  const isVideo = currentItem.isVideo;
+  const isAudio = currentItem.isAudio;
+
+  // 1. 先过滤出同大类的媒体文件 (全为视频或全为音频)
+  const allMedia = (state.items || []).filter((i) => (isVideo ? i.isVideo : isAudio ? i.isAudio : false));
+  if (allMedia.length <= 1) return allMedia;
+
+  // 提取文件名前缀（去扩展名、去掉末尾数字/集数标记如 EP01, E01, 第01集, .01, _01, -01）
+  const getCleanPrefix = (name) => {
+    return name
+      .replace(/\.[a-zA-Z0-9]+$/, "") // 剥除扩展名
+      .replace(/(?:[._\-\s]*(?:ep|e|第)?\s*\d+\s*(?:集|话|期)?|[._\-\s]*\d+)\s*$/i, "") // 剥除末尾集数
+      .replace(/[._\-\s]+$/, "")
+      .trim()
+      .toLowerCase();
+  };
+
+  const currentPrefix = getCleanPrefix(currentItem.name);
+
+  // 寻找与当前文件同名前缀的集合（例如都包含“进击的巨人”、“火影忍者”等）
+  let matchedGroup = allMedia.filter((item) => {
+    if (item.id === currentItem.id) return true;
+    if (!currentPrefix || currentPrefix.length < 2) return false;
+    const itemPrefix = getCleanPrefix(item.name);
+    return itemPrefix === currentPrefix || itemPrefix.startsWith(currentPrefix) || currentPrefix.startsWith(itemPrefix);
+  });
+
+  // 如果没有找到同名前缀的多集内容，则回退为当前整个文件夹目录内的同类媒体（保证音乐专辑或未统一命名的剧集也能顺畅连播）
+  const targetPlaylist = matchedGroup.length > 1 ? matchedGroup : allMedia;
+
+  // 使用自然数排序（确保 1, 2, ..., 9, 10, 11 不会乱序）
+  return targetPlaylist.sort((a, b) => a.name.localeCompare(b.name, "zh-CN", { numeric: true }));
+}
+
+// 播放相邻集数 (方向: 1 下一集, -1 上一集)
+function playAdjacentEpisode(direction = 1) {
+  const current = state.activeMediaItem;
+  if (!current) return;
+
+  const playlist = getEpisodePlaylist(current);
+  if (!playlist || playlist.length <= 1) {
+    showToast(direction > 0 ? "已是最后一集" : "已是第一集");
+    return;
+  }
+
+  const currentIndex = playlist.findIndex((i) => i.id === current.id);
+  if (currentIndex === -1) return;
+
+  const targetIndex = currentIndex + direction;
+  if (targetIndex < 0) {
+    showToast("已是第一集");
+    return;
+  }
+  if (targetIndex >= playlist.length) {
+    showToast("全部剧集已播放完毕！");
+    return;
+  }
+
+  const nextItem = playlist[targetIndex];
+  showToast(`正在播放下一集: ${nextItem.name.replace(/\.[a-zA-Z0-9]+$/, "")}`);
+  openMediaPlayer(nextItem);
+}
+
+// 更新连播与上一集/下一集按钮状态
+function updateAutoplayUI() {
+  if (dom.playerAutoplayToggleBtn) {
+    if (state.autoPlayNext) {
+      dom.playerAutoplayToggleBtn.classList.remove("text-slate-400");
+      dom.playerAutoplayToggleBtn.classList.add("text-brand-400", "bg-brand-500/15");
+      if (dom.playerAutoplayText) dom.playerAutoplayText.textContent = "连播: 开";
+      dom.playerAutoplayToggleBtn.title = "自动连播已开启 (播完自动切下一集)";
+    } else {
+      dom.playerAutoplayToggleBtn.classList.add("text-slate-400");
+      dom.playerAutoplayToggleBtn.classList.remove("text-brand-400", "bg-brand-500/15");
+      if (dom.playerAutoplayText) dom.playerAutoplayText.textContent = "连播: 关";
+      dom.playerAutoplayToggleBtn.title = "自动连播已关闭 (点击开启)";
+    }
+  }
+
+  // 检查上一集/下一集是否存在
+  if (state.activeMediaItem) {
+    const playlist = getEpisodePlaylist(state.activeMediaItem);
+    const currIdx = playlist.findIndex((i) => i.id === state.activeMediaItem.id);
+    if (dom.playerPrevBtn) {
+      dom.playerPrevBtn.disabled = currIdx <= 0;
+      dom.playerPrevBtn.title = currIdx > 0 ? `上一集: ${playlist[currIdx - 1].name}` : "已是第一集";
+    }
+    if (dom.playerNextBtn) {
+      dom.playerNextBtn.disabled = currIdx === -1 || currIdx >= playlist.length - 1;
+      dom.playerNextBtn.title = currIdx < playlist.length - 1 ? `下一集: ${playlist[currIdx + 1].name}` : "已是最后一集";
+    }
+  }
+}
+
+// 切换自动连播开关
+function toggleAutoPlayNext() {
+  state.autoPlayNext = !state.autoPlayNext;
+  localStorage.setItem("auto_play_next", state.autoPlayNext ? "true" : "false");
+  updateAutoplayUI();
+  showToast(state.autoPlayNext ? "已开启同名连续剧自动连播" : "已关闭自动连播");
+}
+
 // 打开流媒体播放器
 function openMediaPlayer(item) {
   destroyPlayer();
@@ -927,6 +1038,7 @@ function openMediaPlayer(item) {
   }
 
   updateStreamSourceUI();
+  updateAutoplayUI();
 
   dom.playerModal.classList.remove("hidden");
   dom.playerModal.classList.add("flex");
@@ -1008,6 +1120,13 @@ function renderPlayerMedia(item, streamUrl) {
       ratio: null,
       resetOnEnd: true,
     });
+
+    // 监听视频播完事件：若开启了连播，自动连播同名/连续剧下一集
+    state.playerInstance.on("ended", () => {
+      if (state.autoPlayNext) {
+        playAdjacentEpisode(1);
+      }
+    });
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
     const audio = document.createElement("audio");
@@ -1019,6 +1138,13 @@ function renderPlayerMedia(item, streamUrl) {
 
     state.playerInstance = new Plyr(audio, {
       autoplay: true,
+    });
+
+    // 监听音频播完事件：自动下一曲
+    state.playerInstance.on("ended", () => {
+      if (state.autoPlayNext) {
+        playAdjacentEpisode(1);
+      }
     });
   }
 
@@ -1238,6 +1364,19 @@ function setupEventListeners() {
     dom.clearSearchBtn.classList.add("hidden");
     loadFolder(state.currentFolderId);
   });
+
+  // 自动连播开关切换
+  if (dom.playerAutoplayToggleBtn) {
+    dom.playerAutoplayToggleBtn.addEventListener("click", toggleAutoPlayNext);
+  }
+
+  // 上一集 / 下一集点击切换
+  if (dom.playerPrevBtn) {
+    dom.playerPrevBtn.addEventListener("click", () => playAdjacentEpisode(-1));
+  }
+  if (dom.playerNextBtn) {
+    dom.playerNextBtn.addEventListener("click", () => playAdjacentEpisode(1));
+  }
 
   // 模态框关闭与最大化/还原
   dom.closePlayerBtn.addEventListener("click", closePlayer);
