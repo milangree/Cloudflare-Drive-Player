@@ -121,7 +121,7 @@ function showToast(message) {
 // 获取网站配置及状态
 async function checkSystemInfo() {
   try {
-    const res = await fetch("/api/info");
+    const res = await fetch(`/api/info?_t=${Date.now()}`, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       if (!data.configured) {

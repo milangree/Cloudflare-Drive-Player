@@ -3,6 +3,12 @@ import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
 export async function onRequestGet(context) {
   const { env } = context;
 
+  const noCacheHeaders = {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    Pragma: "no-cache",
+  };
+
   try {
     const creds = getCredentials(env);
     const token = await getAccessToken(env);
@@ -23,17 +29,21 @@ export async function onRequestGet(context) {
       } catch (_) {}
     }
 
+    // 优先使用环境变量中的自定义站点名称
+    const customSiteName = env.SITE_NAME ? env.SITE_NAME.trim() : "";
+    const displaySiteName = customSiteName || (rootName ? `${rootName} - Drive Player` : "Cloudflare Drive Player");
+
     return new Response(
       JSON.stringify({
         success: true,
         configured: true,
-        siteName: env.SITE_NAME || "CF Drive Player",
+        siteName: displaySiteName,
         rootFolderId: creds.rootFolderId,
         rootFolderName: rootName,
         clientEmail: creds.clientEmail ? creds.clientEmail.replace(/(.{3}).*(@.*)/, "$1***$2") : null,
       }),
       {
-        headers: { "Content-Type": "application/json; charset=utf-8" },
+        headers: noCacheHeaders,
       }
     );
   } catch (err) {
@@ -44,8 +54,8 @@ export async function onRequestGet(context) {
         error: err.message,
       }),
       {
-        status: 200, // 返回 200 方便前端优雅展示未配置提示引导
-        headers: { "Content-Type": "application/json; charset=utf-8" },
+        status: 200,
+        headers: noCacheHeaders,
       }
     );
   }
