@@ -47,7 +47,7 @@ export async function onRequest(context) {
       }
 
       const res = await saveSystemConfig(env, updateData);
-      return new Response(JSON.stringify({ success: true, persisted: res.persisted, debug: res.debug || null }), {
+      return new Response(JSON.stringify({ success: true, persisted: res.persisted }), {
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {
