@@ -168,36 +168,37 @@
   <div id="player-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 transition-all">
     <div id="player-dialog" class="relative w-full max-w-6xl h-[88vh] sm:h-[82vh] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col transition-all duration-300">
       <!-- 播放器顶部条 (响应式多断点自适应排版) -->
-      <div id="player-header" class="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-slate-800/80 bg-slate-900/90 select-none cursor-default gap-2">
-        <!-- 左侧标题与画质源标签 -->
-        <div class="flex items-center gap-2 overflow-hidden flex-1 min-w-0 pr-1">
+      <div id="player-header" class="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-800/80 bg-slate-900/95 select-none cursor-default gap-1.5 sm:gap-3">
+        <!-- 标题行 (独立自适应，保证任意长度文件名完整展现) -->
+        <div class="flex items-center gap-2 overflow-hidden min-w-0 w-full sm:w-auto sm:flex-1">
           <i data-lucide="film" class="w-4 h-4 text-brand-500 flex-shrink-0" id="player-type-icon"></i>
-          <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-200 truncate select-all" title="点击查看完整文件名">正在播放...</span>
+          <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-100 truncate select-all flex-1 min-w-0" title="点击可全选完整文件名">正在播放...</span>
           <!-- 画质源切换按钮 (支持真 4K 原画与 Google 转码预览自由切换) -->
-          <button id="stream-source-toggle-btn" class="hidden px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border" title="点击在 4K 原画直链 与 Google 云端预览之间切换">
+          <button id="stream-source-toggle-btn" class="hidden px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border" title="点击在 4K 原画直链 与 Google 云端预览之间切换">
             <span id="stream-source-text"></span>
           </button>
         </div>
 
-        <!-- 右侧操作栏 (支持移动端与小窗口下的折叠与收敛) -->
-        <div class="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
-          <!-- 连播控制区 -->
-          <div class="flex items-center bg-slate-800/50 rounded-lg p-0.5 border border-slate-700/50">
-            <!-- 切换上一集与下一集按钮 -->
-            <button id="player-prev-btn" class="p-1 sm:p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors disabled:opacity-25 disabled:cursor-not-allowed" title="上一集">
+        <!-- 功能按钮行 (靠右对齐或小窗口下自成一行，绝不挤压片名) -->
+        <div class="flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0 self-end sm:self-center">
+          <!-- 连播控制组 -->
+          <div class="flex items-center bg-slate-800/60 rounded-lg p-0.5 border border-slate-700/60 shadow-inner">
+            <!-- 切换上一集按钮 -->
+            <button id="player-prev-btn" class="p-1 sm:p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/80 transition-colors disabled:opacity-20 disabled:cursor-not-allowed" title="上一集">
               <i data-lucide="skip-back" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
             </button>
             <!-- 同名/连续剧自动连播按钮 -->
-            <button id="player-autoplay-toggle-btn" class="px-1.5 py-1 sm:px-2 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors flex items-center gap-1" title="自动连播: 开启后播完自动播放下一集">
+            <button id="player-autoplay-toggle-btn" class="px-1.5 py-1 sm:px-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/80 transition-colors flex items-center gap-1" title="自动连播: 开启后播完自动播放下一集">
               <i data-lucide="repeat" class="w-3.5 h-3.5 sm:w-4 sm:h-4" id="player-autoplay-icon"></i>
               <span class="text-[11px] font-medium hidden md:inline" id="player-autoplay-text">连播: 开</span>
             </button>
-            <button id="player-next-btn" class="p-1 sm:p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors disabled:opacity-25 disabled:cursor-not-allowed" title="下一集">
+            <!-- 切换下一集按钮 -->
+            <button id="player-next-btn" class="p-1 sm:p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-700/80 transition-colors disabled:opacity-20 disabled:cursor-not-allowed" title="下一集">
               <i data-lucide="skip-forward" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
             </button>
           </div>
 
-          <div class="h-3.5 w-px bg-slate-800 mx-0.5 hidden xs:block"></div>
+          <div class="h-3.5 w-px bg-slate-800 mx-0.5"></div>
 
           <!-- 外部播放器菜单下拉 (精简图标按钮) -->
           <div class="relative inline-block text-left" id="ext-player-dropdown-container">

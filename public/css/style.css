@@ -61,7 +61,7 @@
 
 /* 播放器顶部操作栏在小屏幕与窄窗口下的自适应弹性排版 */
 #player-header {
-  flex-wrap: nowrap;
+  transition: all 0.2s ease;
 }
 
 @media (max-width: 640px) {
