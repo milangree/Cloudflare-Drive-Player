@@ -147,7 +147,7 @@
   <div id="player-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 transition-all">
     <div id="player-dialog" class="relative w-full max-w-6xl bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col max-h-[92vh] transition-all duration-300">
       <!-- 播放器顶部条 -->
-      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800/80 bg-slate-900/80">
+      <div id="player-header" class="flex items-center justify-between px-5 py-3 border-b border-slate-800/80 bg-slate-900/80 select-none cursor-default">
         <div class="flex items-center gap-2.5 overflow-hidden flex-1 min-w-0 mr-3">
           <i data-lucide="film" class="w-4 h-4 text-brand-500 flex-shrink-0" id="player-type-icon"></i>
           <span id="player-file-name" class="font-medium text-sm text-slate-200 truncate">正在播放...</span>
@@ -227,6 +227,10 @@
           <button id="player-copy-link-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="复制直链">
             <i data-lucide="copy" class="w-4 h-4"></i>
           </button>
+          <!-- 最大化 / 还原窗口按钮 -->
+          <button id="player-maximize-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="最大化窗口 (双击顶部栏也可最大化)">
+            <i data-lucide="maximize-2" class="w-4 h-4" id="player-maximize-icon"></i>
+          </button>
           <button id="close-player-btn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="关闭 (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
@@ -246,7 +250,7 @@
 
       <!-- 媒体挂载容器 -->
       <div class="flex-1 bg-black flex items-center justify-center overflow-hidden">
-        <div id="media-wrapper" class="w-full h-full flex items-center justify-center min-h-[50vh] max-h-[85vh]">
+        <div id="media-wrapper" class="w-full h-full flex items-center justify-center min-h-[50vh]">
           <!-- 动态创建 <video> 或 <audio> -->
         </div>
       </div>

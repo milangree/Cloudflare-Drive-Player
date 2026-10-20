@@ -16,6 +16,7 @@ const state = {
   playerInstance: null,
   activeMediaItem: null,
   isGooglePreview: false,
+  isPlayerMaximized: false,
 };
 
 // DOM 元素引用
@@ -38,10 +39,13 @@ const dom = {
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
   playerDialog: document.getElementById("player-dialog"),
+  playerHeader: document.getElementById("player-header"),
   playerFileName: document.getElementById("player-file-name"),
   playerTypeIcon: document.getElementById("player-type-icon"),
   playerDownloadBtn: document.getElementById("player-download-btn"),
   playerCopyLinkBtn: document.getElementById("player-copy-link-btn"),
+  playerMaximizeBtn: document.getElementById("player-maximize-btn"),
+  playerMaximizeIcon: document.getElementById("player-maximize-icon"),
   closePlayerBtn: document.getElementById("close-player-btn"),
   mediaWrapper: document.getElementById("media-wrapper"),
   codecWarningBanner: document.getElementById("codec-warning-banner"),
@@ -737,18 +741,26 @@ function renderGooglePreview(item) {
 
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
 
-  // 容器裁剪法：Google 预览顶栏高约 50px，通过负 margin-top 完美裁切掉顶栏与弹出按钮，彻底根除黑点
-  // 并且移除 sandbox 限制，赋予完整的媒体特权，解除 Google 播放器对高码率硬件解码的封锁！
-  const containerHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh; min-height: 480px;";
+  // 严格绝对定位推移裁剪：将顶栏向上偏移 56px，彻底裁切掉弹出按钮，不留缝隙；同时右上角覆盖完全透明的交互防护屏障，0 黑点 0 瑕疵
+  const heightClass = state.isPlayerMaximized
+    ? "h-[calc(100vh-49px)]"
+    : (isPortrait ? "h-[82vh] min-h-[560px]" : "h-[75vh] min-h-[480px]");
+
   dom.mediaWrapper.innerHTML = `
-    <div class="relative w-full h-full overflow-hidden flex items-center justify-center bg-black rounded-b-2xl" style="${containerHeight}">
+    <div class="relative w-full ${heightClass} overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
         src="${previewUrl}" 
-        class="w-full border-0" 
-        style="display: block; width: 100%; height: calc(100% + 50px); margin-top: -50px;"
+        class="border-0" 
+        style="position: absolute; top: -56px; left: 0; width: 100%; height: calc(100% + 56px);"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         loading="eager"
       ></iframe>
+      <!-- 右上角完全透明安全防护罩：100% 阻断鼠标悬停与点击触碰任何原生弹出动作，且无黑点色差 -->
+      <div 
+        class="absolute top-0 right-0 w-24 h-16 z-30 cursor-default" 
+        style="background: transparent; pointer-events: auto;"
+        onclick="event.stopPropagation(); event.preventDefault();"
+      ></div>
     </div>
   `;
 }
@@ -800,11 +812,75 @@ function renderPlayerMedia(item, streamUrl) {
   }
 }
 
+// 切换播放器最大化 / 还原
+function togglePlayerMaximize() {
+  state.isPlayerMaximized = !state.isPlayerMaximized;
+
+  if (state.isPlayerMaximized) {
+    // 最大化模式：铺满视口
+    dom.playerModal.classList.remove("p-3", "sm:p-6");
+    dom.playerModal.classList.add("p-0");
+
+    dom.playerDialog.classList.remove("max-w-6xl", "max-w-md", "sm:max-w-lg", "max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
+    dom.playerDialog.classList.add("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+
+    if (dom.playerMaximizeBtn) {
+      dom.playerMaximizeBtn.title = "还原窗口";
+    }
+    if (dom.playerMaximizeIcon) {
+      dom.playerMaximizeIcon.setAttribute("data-lucide", "minimize-2");
+    }
+  } else {
+    // 还原窗口模式
+    dom.playerModal.classList.add("p-3", "sm:p-6");
+    dom.playerModal.classList.remove("p-0");
+
+    dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+    dom.playerDialog.classList.add("max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
+
+    const isPortrait = isPortraitMedia(state.activeMediaItem);
+    if (isPortrait) {
+      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg");
+    } else {
+      dom.playerDialog.classList.add("max-w-6xl");
+    }
+
+    if (dom.playerMaximizeBtn) {
+      dom.playerMaximizeBtn.title = "最大化窗口 (双击顶部栏也可最大化)";
+    }
+    if (dom.playerMaximizeIcon) {
+      dom.playerMaximizeIcon.setAttribute("data-lucide", "maximize-2");
+    }
+  }
+
+  // 刷新当前播放器尺寸
+  if (state.activeMediaItem && state.isGooglePreview) {
+    renderGooglePreview(state.activeMediaItem);
+  }
+
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
 // 关闭并销毁播放器
 function closePlayer() {
   destroyPlayer();
   state.activeMediaItem = null;
   state.isGooglePreview = false;
+
+  // 重置最大化状态
+  if (state.isPlayerMaximized) {
+    state.isPlayerMaximized = false;
+    dom.playerModal.classList.add("p-3", "sm:p-6");
+    dom.playerModal.classList.remove("p-0");
+    dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+    dom.playerDialog.classList.add("max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
+    if (dom.playerMaximizeIcon) {
+      dom.playerMaximizeIcon.setAttribute("data-lucide", "maximize-2");
+    }
+  }
+
   if (dom.playerDialog) {
     dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
     dom.playerDialog.classList.add("max-w-6xl");
@@ -899,8 +975,20 @@ function setupEventListeners() {
     loadFolder(state.currentFolderId);
   });
 
-  // 模态框关闭
+  // 模态框关闭与最大化/还原
   dom.closePlayerBtn.addEventListener("click", closePlayer);
+  if (dom.playerMaximizeBtn) {
+    dom.playerMaximizeBtn.addEventListener("click", togglePlayerMaximize);
+  }
+  if (dom.playerHeader) {
+    // 双击顶部标题栏快捷切换最大化/还原
+    dom.playerHeader.addEventListener("dblclick", (e) => {
+      // 避免点击到按钮时触发
+      if (!e.target.closest("button") && !e.target.closest("a")) {
+        togglePlayerMaximize();
+      }
+    });
+  }
   dom.closeImageBtn.addEventListener("click", closeImagePreview);
   dom.closeGuideBtn.addEventListener("click", () => {
     dom.configGuideModal.classList.add("hidden");
