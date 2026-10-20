@@ -90,9 +90,11 @@ export async function saveSystemConfig(env, newConfig) {
  * 校验前台访问密码 Token
  */
 export async function verifyAccessToken(token, env) {
-  if (!token) return false;
   const config = await getSystemConfig(env);
+  // 如果系统根本没有开启密码保护，直接放行！
   if (!config.requirePassword || !config.accessPassword) return true;
+
+  if (!token) return false;
 
   try {
     const [payloadB64, sign] = token.split(".");
