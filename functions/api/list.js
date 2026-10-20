@@ -66,7 +66,7 @@ export async function onRequestGet(context) {
     driveApiUrl.searchParams.set("q", q);
     driveApiUrl.searchParams.set(
       "fields",
-      "nextPageToken, files(id, name, mimeType, size, modifiedTime, thumbnailLink, iconLink, videoMediaMetadata)"
+      "nextPageToken, files(id, name, mimeType, size, modifiedTime, thumbnailLink, iconLink, videoMediaMetadata, shortcutDetails)"
     );
     driveApiUrl.searchParams.set("orderBy", "folder, name_natural asc");
     driveApiUrl.searchParams.set("pageSize", "100");
@@ -116,18 +116,27 @@ export async function onRequestGet(context) {
       } catch (_) {}
     }
 
-    // 3. 规范化并对文件进行分类整理
+    // 3. 规范化并对文件进行分类整理（支持快捷方式穿透解析）
     const items = (data.files || []).map((f) => {
-      const isFolder = f.mimeType === "application/vnd.google-apps.folder";
-      const isVideo = f.mimeType.startsWith("video/") || /\.(mp4|mkv|webm|avi|mov|flv|m4v)$/i.test(f.name);
-      const isAudio = f.mimeType.startsWith("audio/") || /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(f.name);
-      const isImage = f.mimeType.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(f.name);
+      let targetId = f.id;
+      let targetMimeType = f.mimeType;
+
+      // 如果是 Google Drive 快捷方式，自动穿透解析目标真实 ID 与类型
+      if (f.mimeType === "application/vnd.google-apps.shortcut" && f.shortcutDetails) {
+        targetId = f.shortcutDetails.targetId || f.id;
+        targetMimeType = f.shortcutDetails.targetMimeType || f.mimeType;
+      }
+
+      const isFolder = targetMimeType === "application/vnd.google-apps.folder";
+      const isVideo = targetMimeType.startsWith("video/") || /\.(mp4|mkv|webm|avi|mov|flv|m4v)$/i.test(f.name);
+      const isAudio = targetMimeType.startsWith("audio/") || /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(f.name);
+      const isImage = targetMimeType.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(f.name);
       const isDocument = /\.(pdf|txt|md|json|log|csv)$/i.test(f.name);
 
       return {
-        id: f.id,
+        id: targetId,
         name: f.name,
-        mimeType: f.mimeType,
+        mimeType: targetMimeType,
         size: f.size ? parseInt(f.size, 10) : 0,
         itemCount: 0,
         modifiedTime: f.modifiedTime,
