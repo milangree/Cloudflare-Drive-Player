@@ -82,10 +82,28 @@
     
     <!-- 路径面包屑与排序控制栏 -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-800/60">
-      <!-- 面包屑 -->
-      <nav id="breadcrumbs" class="flex items-center flex-wrap gap-1.5 text-sm font-medium text-slate-300">
-        <!-- 动态生成 -->
-      </nav>
+      <!-- 盘符选择器与面包屑导航 -->
+      <div class="flex items-center flex-wrap gap-2 min-w-0">
+        <!-- 盘符切换下拉菜单 -->
+        <div class="relative inline-block text-left flex-shrink-0" id="drive-selector-container">
+          <button id="drive-selector-btn" class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs sm:text-sm font-medium transition-colors shadow-sm">
+            <i data-lucide="hard-drive" class="w-4 h-4 text-brand-500"></i>
+            <span id="current-drive-name">主云盘</span>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
+          </button>
+          <div id="drive-dropdown-menu" class="hidden absolute left-0 mt-1.5 w-60 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-1 z-40 text-xs">
+            <div class="px-3 py-1.5 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">切换云端硬盘</div>
+            <div id="drive-list-container" class="py-1 max-h-60 overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-600 flex-shrink-0" id="drive-crumb-divider"></i>
+
+        <!-- 面包屑 -->
+        <nav id="breadcrumbs" class="flex items-center flex-wrap gap-1.5 text-sm font-medium text-slate-300">
+          <!-- 动态生成 -->
+        </nav>
+      </div>
 
       <!-- 排序过滤 -->
       <div class="flex items-center gap-3 text-xs text-slate-400 self-end sm:self-auto">

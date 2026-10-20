@@ -72,6 +72,74 @@ export function getCredentials(env) {
 }
 
 /**
+ * 解析多盘配置
+ * 支持 JSON 数组格式或极简 key:value / key=value 格式
+ */
+export function parseDrives(env) {
+  const drives = [];
+
+  if (env.DRIVES && typeof env.DRIVES === "string" && env.DRIVES.trim()) {
+    const raw = env.DRIVES.trim();
+    // 1. 尝试 JSON 数组解析
+    if (raw.startsWith("[") || raw.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        list.forEach((item, index) => {
+          if (item && (item.id || item.folderId)) {
+            drives.push({
+              id: item.id || item.folderId,
+              name: item.name || `云盘 ${index + 1}`,
+              icon: item.icon || "hard-drive",
+            });
+          }
+        });
+      } catch (_) {}
+    }
+
+    // 2. 若非 JSON，尝试多行或逗号分隔格式，如: "动漫影视:1-3i..., 欧美电影:1xxx..."
+    if (drives.length === 0) {
+      const parts = raw.split(/[\n,;]+/);
+      parts.forEach((part, index) => {
+        const trimmed = part.trim();
+        if (!trimmed) return;
+        if (trimmed.includes(":") || trimmed.includes("=")) {
+          const sep = trimmed.includes(":") ? ":" : "=";
+          const idx = trimmed.indexOf(sep);
+          const name = trimmed.substring(0, idx).trim();
+          const id = trimmed.substring(idx + 1).trim();
+          if (id) {
+            drives.push({ id, name: name || `云盘 ${index + 1}`, icon: "hard-drive" });
+          }
+        } else {
+          drives.push({ id: trimmed, name: `云盘 ${index + 1}`, icon: "hard-drive" });
+        }
+      });
+    }
+  }
+
+  // 3. 兼容已配置的单个 ROOT_FOLDER_ID
+  if (drives.length === 0 && env.ROOT_FOLDER_ID && env.ROOT_FOLDER_ID.trim()) {
+    drives.push({
+      id: env.ROOT_FOLDER_ID.trim(),
+      name: "主云盘",
+      icon: "hard-drive",
+    });
+  }
+
+  // 4. 最终兜底
+  if (drives.length === 0) {
+    drives.push({
+      id: "root",
+      name: "Google 云端硬盘",
+      icon: "hard-drive",
+    });
+  }
+
+  return drives;
+}
+
+/**
  * 生成签名 JWT 并换取 Google Drive Access Token
  */
 export async function getAccessToken(env) {

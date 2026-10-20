@@ -1,4 +1,4 @@
-import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
+import { getAccessToken, getCredentials, parseDrives } from "../utils/googleAuth.js";
 
 export async function onRequestGet(context) {
   const { env } = context;
@@ -12,34 +12,39 @@ export async function onRequestGet(context) {
   try {
     const creds = getCredentials(env);
     const token = await getAccessToken(env);
+    const drives = parseDrives(env);
 
-    let rootName = "Google 云端硬盘";
-    if (creds.rootFolderId && creds.rootFolderId !== "root") {
-      try {
-        const metaResp = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${creds.rootFolderId}?supportsAllDrives=true&fields=name`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (metaResp.ok) {
-          const meta = await metaResp.json();
-          rootName = meta.name || rootName;
+    // 为没有显式自定义命名的盘，从 Google Drive 查询真实文件夹名称
+    await Promise.all(
+      drives.map(async (drive) => {
+        if ((!drive.name || drive.name.startsWith("云盘") || drive.name === "主云盘") && drive.id !== "root") {
+          try {
+            const metaResp = await fetch(
+              `https://www.googleapis.com/drive/v3/files/${drive.id}?supportsAllDrives=true&fields=name`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            if (metaResp.ok) {
+              const meta = await metaResp.json();
+              if (meta.name) drive.name = meta.name;
+            }
+          } catch (_) {}
         }
-      } catch (_) {}
-    }
+      })
+    );
 
-    // 优先使用环境变量中的自定义站点名称
+    const defaultDrive = drives[0] || { id: "root", name: "Google 云端硬盘" };
     const customSiteName = env.SITE_NAME ? env.SITE_NAME.trim() : "";
-    const displaySiteName = customSiteName || (rootName ? `${rootName} - Drive Player` : "Cloudflare Drive Player");
+    const displaySiteName = customSiteName || (defaultDrive.name ? `${defaultDrive.name} - Drive Player` : "Cloudflare Drive Player");
 
     return new Response(
       JSON.stringify({
         success: true,
         configured: true,
         siteName: displaySiteName,
-        rootFolderId: creds.rootFolderId,
-        rootFolderName: rootName,
+        drives,
+        defaultDriveId: defaultDrive.id,
         clientEmail: creds.clientEmail ? creds.clientEmail.replace(/(.{3}).*(@.*)/, "$1***$2") : null,
       }),
       {
