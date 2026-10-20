@@ -108,6 +108,8 @@ npm run deploy
 | `DRIVES` | **推荐** | **支持挂载多个盘**。格式示例：`动漫:1-3i..., 电影:1abc..., 音乐:1xyz...`，也可以是标准 JSON 数组格式。 |
 | `ROOT_FOLDER_ID` | 选填 | 挂载单个根文件夹 ID（仅在未配置 `DRIVES` 时作为单盘兜底）。 |
 | `SITE_NAME` | 选填 | 自定义网站标题，例如 `我的私人影视库`。 |
+| `CF_ACCOUNT_ID` | 选填 | Cloudflare 账户 ID（开启 Cloudflare Stream 云端切片自适应流支持）。 |
+| `CF_STREAM_API_TOKEN` | 选填 | 拥有 `Stream: Edit` 权限的 Cloudflare API 令牌。 |
 
 > 💡 **提示**：添加完环境变量后，在 Pages 的 **Deployments (部署)** 页面中点击最新一次部署右侧的 `Retry deployment (重新部署)` 即可生效！
 

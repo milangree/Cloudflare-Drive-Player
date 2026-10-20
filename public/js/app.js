@@ -53,6 +53,10 @@ const dom = {
   codecWarningBanner: document.getElementById("codec-warning-banner"),
   toggleGooglePreviewBtn: document.getElementById("toggle-google-preview-btn"),
   previewModeText: document.getElementById("preview-mode-text"),
+  toggleCfStreamBtn: document.getElementById("toggle-cf-stream-btn"),
+  cfStreamBtnText: document.getElementById("cf-stream-btn-text"),
+  cfStreamGuideModal: document.getElementById("cf-stream-guide-modal"),
+  closeCfGuideBtn: document.getElementById("close-cf-guide-btn"),
   extPlayerMenuBtn: document.getElementById("ext-player-menu-btn"),
   extPlayerMenu: document.getElementById("ext-player-menu"),
   btnPotplayer: document.getElementById("btn-potplayer"),
@@ -737,12 +741,16 @@ function closePlayer() {
   destroyPlayer();
   state.activeMediaItem = null;
   state.isGooglePreview = false;
+  state.isCfStreamMode = false;
+  clearInterval(state.cfPollInterval);
+  dom.cfStreamBtnText.textContent = "CF Stream 播放";
   dom.extPlayerMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
   dom.playerModal.classList.remove("flex");
 }
 
 function destroyPlayer() {
+  clearInterval(state.cfPollInterval);
   if (state.playerInstance) {
     try {
       state.playerInstance.stop();
@@ -751,6 +759,126 @@ function destroyPlayer() {
     state.playerInstance = null;
   }
   dom.mediaWrapper.innerHTML = "";
+}
+
+// 切换 Cloudflare Stream 云端切片自适应流播放
+async function toggleCloudflareStream() {
+  if (!state.activeMediaItem) return;
+  const item = state.activeMediaItem;
+
+  if (state.isCfStreamMode) {
+    clearInterval(state.cfPollInterval);
+    state.isCfStreamMode = false;
+    dom.cfStreamBtnText.textContent = "CF Stream 播放";
+    const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+    renderPlayerMedia(item, streamUrl);
+    return;
+  }
+
+  destroyPlayer();
+  state.isCfStreamMode = true;
+  state.isGooglePreview = false;
+  dom.previewModeText.textContent = "Google 预览";
+  dom.cfStreamBtnText.textContent = "原生播放器";
+
+  dom.mediaWrapper.innerHTML = `
+    <div class="flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
+      <div class="w-12 h-12 rounded-full border-2 border-orange-500 border-t-transparent animate-spin mb-4"></div>
+      <h4 class="text-base font-semibold text-white mb-2">正在连接 Cloudflare Stream...</h4>
+      <p class="text-xs text-slate-400">正在检查云端切片转码状态，请稍候</p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch("/api/cf-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId: item.id, fileName: item.name }),
+    });
+
+    const data = await res.json();
+    if (data.notConfigured) {
+      state.isCfStreamMode = false;
+      dom.cfStreamBtnText.textContent = "CF Stream 播放";
+      dom.cfStreamGuideModal.classList.remove("hidden");
+      dom.cfStreamGuideModal.classList.add("flex");
+      const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+      renderPlayerMedia(item, streamUrl);
+      return;
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || "请求 Cloudflare Stream 失败");
+    }
+
+    handleCfStreamStatus(data.video);
+  } catch (err) {
+    showToast(`CF Stream 异常: ${err.message}`);
+    state.isCfStreamMode = false;
+    dom.cfStreamBtnText.textContent = "CF Stream 播放";
+    const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+    renderPlayerMedia(item, streamUrl);
+  }
+}
+
+function handleCfStreamStatus(video) {
+  clearInterval(state.cfPollInterval);
+
+  if (video.readyToStream) {
+    dom.mediaWrapper.innerHTML = `
+      <iframe
+        src="https://iframe.videodelivery.net/${video.uid}?autoplay=true"
+        class="w-full h-[75vh] border-0"
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+        allowfullscreen="true"
+      ></iframe>
+    `;
+    return;
+  }
+
+  const pct = (video.status && video.status.pctComplete) ? parseFloat(video.status.pctComplete).toFixed(1) : "0.0";
+  dom.mediaWrapper.innerHTML = `
+    <div class="flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto">
+      <div class="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center mb-4">
+        <i data-lucide="zap" class="w-7 h-7 animate-pulse"></i>
+      </div>
+      <h4 class="text-base font-bold text-white mb-1.5">Cloudflare Stream 正在云端切片转码</h4>
+      <p class="text-xs text-slate-400 mb-5 leading-relaxed">
+        正在将该视频异步转化为全平台自适应 HLS 码流（1080P/720P/480P）。<br>
+        <strong>首次转码只需进行一次</strong>，完成后任何手机、电脑浏览器均可 100% 秒开播放！
+      </p>
+      <div class="w-full max-w-xs bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2.5 p-0.5 border border-slate-700/60">
+        <div id="cf-progress-bar" class="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full transition-all duration-500" style="width: ${Math.max(5, parseFloat(pct))}%"></div>
+      </div>
+      <span id="cf-progress-text" class="text-xs text-orange-400 font-mono font-semibold">云端进度: ${pct}%</span>
+    </div>
+  `;
+
+  if (window.lucide) lucide.createIcons();
+
+  state.cfPollInterval = setInterval(async () => {
+    if (!state.isCfStreamMode || !state.activeMediaItem) {
+      clearInterval(state.cfPollInterval);
+      return;
+    }
+
+    try {
+      const pollRes = await fetch(`/api/cf-stream?fileId=${encodeURIComponent(state.activeMediaItem.id)}`);
+      const pollData = await pollRes.json();
+      if (pollData.success && pollData.video) {
+        if (pollData.video.readyToStream) {
+          clearInterval(state.cfPollInterval);
+          handleCfStreamStatus(pollData.video);
+        } else if (pollData.video.status) {
+          const curPct = pollData.video.status.pctComplete ? parseFloat(pollData.video.status.pctComplete).toFixed(1) : pct;
+          const bar = document.getElementById("cf-progress-bar");
+          const txt = document.getElementById("cf-progress-text");
+          if (bar) bar.style.width = `${Math.max(5, parseFloat(curPct))}%`;
+          if (txt) txt.textContent = `云端进度: ${curPct}%`;
+        }
+      }
+    } catch (_) {}
+  }, 3500);
 }
 
 // 图片预览
@@ -846,6 +974,15 @@ function setupEventListeners() {
 
   // 切换 Google 预览
   dom.toggleGooglePreviewBtn.addEventListener("click", toggleGooglePreview);
+
+  // 切换 Cloudflare Stream 播放
+  dom.toggleCfStreamBtn.addEventListener("click", toggleCloudflareStream);
+
+  // 关闭 CF Stream 配置引导
+  dom.closeCfGuideBtn.addEventListener("click", () => {
+    dom.cfStreamGuideModal.classList.add("hidden");
+    dom.cfStreamGuideModal.classList.remove("flex");
+  });
 
   // 外部播放器菜单点击切换
   dom.extPlayerMenuBtn.addEventListener("click", (e) => {
