@@ -1064,23 +1064,26 @@ function renderGooglePreview(item) {
 
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
 
-  // 100% 绝对充满且居中无偏转（top: 0; left: 0），杜绝任何向上推移，彻底修复 4K 画面被裁切的问题！
-  // 容器保持 100% 充满，随外层窗口最大化/还原/拖拽平滑过渡，绝不重新加载 iframe！
+  // 严格隔离模式：iframe 禁用 allow-popups 与 allow-popups-to-escape-sandbox，并从 DOM 级别封死所有新窗口/弹窗跳转！
+  // 同时右上角覆盖全透明屏障阻断光标悬浮触发，彻底杜绝 Google 弹出新窗口问题！
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
+        id="google-drive-iframe"
         src="${previewUrl}" 
         class="border-0 w-full h-full" 
         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
         loading="eager"
       ></iframe>
-      <!-- 右上角完全透明安全防护罩：100% 阻断鼠标悬停与点击触碰任何原生弹出动作，且无黑点色差，零画面裁切 -->
+      <!-- 右上角完全透明安全防护罩：彻底拦截任何点击或悬停动作，无黑点，不遮挡画面 -->
       <div 
-        class="absolute top-0 right-0 w-24 h-16 z-30 cursor-default" 
+        class="absolute top-0 right-0 w-28 h-20 z-30 cursor-default" 
         style="background: transparent; pointer-events: auto;"
         onclick="event.stopPropagation(); event.preventDefault();"
-        title=""
+        onmousedown="event.stopPropagation(); event.preventDefault();"
+        onmouseup="event.stopPropagation(); event.preventDefault();"
       ></div>
     </div>
   `;
