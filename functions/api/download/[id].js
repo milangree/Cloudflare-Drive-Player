@@ -17,35 +17,66 @@ export async function onRequestGet(context) {
   try {
     const token = await getAccessToken(env);
 
-    // 如果未传文件名，先查询文件元数据获取真实文件名
-    if (!customFilename) {
-      try {
-        const metaResp = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=name,mimeType`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (metaResp.ok) {
-          const meta = await metaResp.json();
+    // 1. 查询文件元数据（检查是否为文件夹、Google Docs文档等）
+    let mimeType = "";
+    try {
+      const metaResp = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=name,mimeType`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (metaResp.ok) {
+        const meta = await metaResp.json();
+        if (!customFilename && meta.name) {
           customFilename = meta.name;
         }
-      } catch (_) {}
+        mimeType = meta.mimeType || "";
+      }
+    } catch (_) {}
+
+    // 2. 文件夹不可直接单文件流下载
+    if (mimeType === "application/vnd.google-apps.folder") {
+      return new Response(
+        JSON.stringify({
+          error: "无法直接下载文件夹，请进入文件夹下载其中的音视频或文件。",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        }
+      );
     }
 
     if (!customFilename) {
       customFilename = `file_${fileId}`;
     }
 
-    // 从 Google Drive 下载文件流
-    const googleResp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    // 3. 处理 Google Docs/Sheets/Slides 等专用在线文档导出
+    let downloadEndpoint = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
+    if (mimeType.startsWith("application/vnd.google-apps.")) {
+      let exportMime = "application/pdf";
+      let ext = ".pdf";
+      if (mimeType.includes("spreadsheet")) {
+        exportMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        ext = ".xlsx";
+      } else if (mimeType.includes("presentation")) {
+        exportMime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        ext = ".pptx";
+      } else if (mimeType.includes("document")) {
+        exportMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        ext = ".docx";
       }
-    );
+      if (!customFilename.includes(".")) customFilename += ext;
+      downloadEndpoint = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent(exportMime)}&supportsAllDrives=true`;
+    }
+
+    // 从 Google Drive 下载文件流
+    const googleResp = await fetch(downloadEndpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     if (!googleResp.ok) {
       const err = await googleResp.text();
