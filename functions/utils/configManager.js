@@ -86,7 +86,7 @@ async function writeConfigToDrive(env, config) {
     if (fileId) {
       // 存在则更新内容
       const patchUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&supportsAllDrives=true`;
-      await fetch(patchUrl, {
+      const patchResp = await fetch(patchUrl, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -94,7 +94,7 @@ async function writeConfigToDrive(env, config) {
         },
         body: content,
       });
-      return true;
+      return { ok: patchResp.ok, status: patchResp.status, text: await patchResp.text() };
     } else {
       // 不存在则新建文件
       const metadata = {
@@ -127,16 +127,19 @@ async function writeConfigToDrive(env, config) {
         }
       );
 
+      const resText = await createResp.text();
       if (createResp.ok) {
-        const createdFile = await createResp.json();
-        cachedDriveFileId = createdFile.id;
-        return true;
+        try {
+          const createdFile = JSON.parse(resText);
+          cachedDriveFileId = createdFile.id;
+        } catch (_) {}
+        return { ok: true, status: createResp.status };
       }
+      return { ok: false, status: createResp.status, text: resText };
     }
   } catch (err) {
-    console.error("writeConfigToDrive error:", err);
+    return { ok: false, error: err.message };
   }
-  return false;
 }
 
 /**
@@ -217,6 +220,7 @@ export async function saveSystemConfig(env, newConfig) {
   }
 
   // 2. 同时异步持久化同步写入 Google 云端硬盘
+  let debug = null;
   try {
     const current = await getSystemConfig(env);
     const merged = {
@@ -226,14 +230,17 @@ export async function saveSystemConfig(env, newConfig) {
       adminPassword: current.adminPassword,
       ...newConfig,
     };
-    const driveSaved = await writeConfigToDrive(env, merged);
-    if (driveSaved) {
+    const driveResult = await writeConfigToDrive(env, merged);
+    debug = driveResult;
+    if (driveResult && driveResult.ok) {
       persisted = persisted === "kv" ? "kv+drive" : "drive";
       lastDriveSyncTime = Date.now();
     }
-  } catch (_) {}
+  } catch (err) {
+    debug = { error: err.message };
+  }
 
-  return { success: true, persisted };
+  return { success: true, persisted, debug };
 }
 
 /**
