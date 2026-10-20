@@ -44,6 +44,7 @@ const dom = {
   driveCrumbDivider: document.getElementById("drive-crumb-divider"),
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
+  playerDialog: document.getElementById("player-dialog"),
   playerFileName: document.getElementById("player-file-name"),
   playerTypeIcon: document.getElementById("player-type-icon"),
   playerDownloadBtn: document.getElementById("player-download-btn"),
@@ -141,6 +142,15 @@ function getVideoResolution(item) {
   }
 
   return null;
+}
+
+// 判断媒体是否为竖屏视频
+function isPortraitMedia(item) {
+  if (item && item.videoMediaMetadata) {
+    const { width, height } = item.videoMediaMetadata;
+    if (width && height && height > width) return true;
+  }
+  return false;
 }
 
 // 辅助工具：全局 Toast
@@ -638,9 +648,23 @@ function openMediaPlayer(item) {
   state.activeMediaItem = item;
   state.isGooglePreview = false;
 
-  const resBadge = getVideoResolution(item);
-  dom.playerFileName.textContent = `${item.name}${resBadge ? ` [${resBadge}]` : ""}`;
+  // 播放时标题纯净展示：不显示后缀名和分辨率
+  const cleanTitle = item.name.replace(/\.[a-zA-Z0-9]+$/, "");
+  dom.playerFileName.textContent = cleanTitle;
+  dom.playerFileName.title = item.name;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+
+  // 针对竖屏视频自适应调整弹窗宽度，避免画面拉伸或上下截断
+  const isPortrait = isPortraitMedia(item);
+  if (dom.playerDialog) {
+    if (isPortrait) {
+      dom.playerDialog.classList.remove("max-w-5xl");
+      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg");
+    } else {
+      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
+      dom.playerDialog.classList.add("max-w-5xl");
+    }
+  }
 
   const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
   dom.playerCopyLinkBtn.onclick = async () => {
@@ -700,13 +724,15 @@ function renderPlayerMedia(item, streamUrl) {
 
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
+    const isPortrait = isPortraitMedia(item);
     const video = document.createElement("video");
     video.id = "active-player";
     video.playsInline = true;
     video.controls = true;
     video.crossOrigin = "anonymous";
     video.src = streamUrl;
-    video.className = "w-full max-h-[75vh]";
+    video.className = `w-full ${isPortrait ? "h-auto max-h-[82vh]" : "max-h-[75vh]"}`;
+    video.style.objectFit = "contain";
 
     // 监听播放异常
     video.addEventListener("error", () => {
@@ -738,23 +764,30 @@ function renderPlayerMedia(item, streamUrl) {
 // 切换 Google 官方转码预览模式
 function toggleGooglePreview() {
   if (!state.activeMediaItem) return;
+  const item = state.activeMediaItem;
+  const isPortrait = isPortraitMedia(item);
 
   if (!state.isGooglePreview) {
     destroyPlayer();
     state.isGooglePreview = true;
     dom.previewModeText.textContent = "原生播放器";
+
+    // 针对竖屏视频动态设置高度与最小高度，彻底解决 Google 预览在竖屏下上下画面被裁剪的问题
+    const iframeHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh;";
     dom.mediaWrapper.innerHTML = `
       <iframe 
-        src="https://drive.google.com/file/d/${state.activeMediaItem.id}/preview" 
-        class="w-full h-[75vh] border-0" 
+        src="https://drive.google.com/file/d/${item.id}/preview" 
+        class="w-full border-0 rounded-b-xl" 
+        style="display: block; ${iframeHeight}"
         allow="autoplay; fullscreen"
+        loading="eager"
       ></iframe>
     `;
   } else {
     state.isGooglePreview = false;
     dom.previewModeText.textContent = "Google 预览";
-    const streamUrl = `${window.location.origin}/api/stream/${state.activeMediaItem.id}`;
-    renderPlayerMedia(state.activeMediaItem, streamUrl);
+    const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+    renderPlayerMedia(item, streamUrl);
   }
 }
 
@@ -763,6 +796,10 @@ function closePlayer() {
   destroyPlayer();
   state.activeMediaItem = null;
   state.isGooglePreview = false;
+  if (dom.playerDialog) {
+    dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
+    dom.playerDialog.classList.add("max-w-5xl");
+  }
   dom.extPlayerMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
   dom.playerModal.classList.remove("flex");
