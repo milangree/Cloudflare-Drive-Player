@@ -130,7 +130,7 @@
   background-color: rgba(255, 255, 255, 0.04);
 }
 
-/* 浮动操作按钮 (+号) 旋转动画与菜单状态 */
+/* 浮动操作按钮 (+号) 旋转动画与菜单状态 (OpenList 质感动画) */
 #admin-fab-toggle-btn.fab-active #admin-fab-icon {
   transform: rotate(135deg);
 }
@@ -138,6 +138,11 @@
 #admin-fab-menu.fab-menu-open {
   display: flex !important;
   opacity: 1 !important;
-  transform: translateY(0) !important;
+  transform: translateY(0) scale(1) !important;
   pointer-events: auto !important;
+}
+
+#admin-fab-menu {
+  transform-origin: bottom right;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
