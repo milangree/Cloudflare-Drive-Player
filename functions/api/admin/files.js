@@ -21,6 +21,29 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const { action, fileId, newName, targetFolderId, parentFolderId } = body;
 
+    // 动作 0：排查与查看文件信息
+    if (action === "inspect") {
+      const target = fileId || "root";
+      const inspectUrl = `https://www.googleapis.com/drive/v3/files/${target}?supportsAllDrives=true&fields=*`;
+      const res = await fetch(inspectUrl, {
+        headers: { Authorization: `Bearer ${googleToken}` },
+      });
+      const fileData = await res.json();
+
+      // 如果是文件夹，也顺便查询它下面的子文件原始列表
+      let children = [];
+      try {
+        const childUrl = `https://www.googleapis.com/drive/v3/files?q='${target}'+in+parents+and+trashed=false&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType,parents,shortcutDetails,capabilities)&pageSize=20`;
+        const cRes = await fetch(childUrl, { headers: { Authorization: `Bearer ${googleToken}` } });
+        const cData = await cRes.json();
+        children = cData.files || [];
+      } catch (_) {}
+
+      return new Response(JSON.stringify({ success: true, file: fileData, children }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     // 动作 1：重命名文件或文件夹
     if (action === "rename") {
       if (!fileId || !newName || !newName.trim()) {
