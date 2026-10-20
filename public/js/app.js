@@ -1098,11 +1098,25 @@ function renderListView(items) {
   bindItemEvents(dom.listTbody);
 }
 
+// 触发文件原生静默下载，不打开任何空白新标签页或弹窗
+function triggerFileDownload(item) {
+  if (!item || !item.id) return;
+  const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  const a = document.createElement("a");
+  a.href = downloadUrl;
+  a.download = item.name;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 // 绑定卡片与列表行点击事件
 function bindItemEvents(container) {
   // 1. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
   container.querySelectorAll(".folder-enter-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const id = el.getAttribute("data-id");
       const item = state.items.find((i) => i.id === id);
@@ -1115,6 +1129,7 @@ function bindItemEvents(container) {
   // 2. 媒体操作事件（视频播放 / 图片预览）：点击海报预览图、标题、或具体动作按钮时触发
   container.querySelectorAll(".media-action-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const id = el.getAttribute("data-id");
       const action = el.getAttribute("data-action");
@@ -1126,7 +1141,7 @@ function bindItemEvents(container) {
       } else if (action === "image" || item.isImage) {
         openImagePreview(item);
       } else {
-        window.open(`/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`, "_blank");
+        triggerFileDownload(item);
       }
     });
   });
@@ -1134,6 +1149,7 @@ function bindItemEvents(container) {
   // 3. 播放按钮
   container.querySelectorAll(".play-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const id = btn.getAttribute("data-id");
       const item = state.items.find((i) => i.id === id);
@@ -1144,6 +1160,7 @@ function bindItemEvents(container) {
   // 4. 复制直链按钮
   container.querySelectorAll(".copy-link-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const url = btn.getAttribute("data-url");
       try {
@@ -1158,6 +1175,7 @@ function bindItemEvents(container) {
   // 管理员快捷操作监听：重命名
   container.querySelectorAll(".admin-rename-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
       const shortcutId = btn.getAttribute("data-shortcut-id") || "";
@@ -1176,6 +1194,7 @@ function bindItemEvents(container) {
   // 管理员快捷操作监听：移动
   container.querySelectorAll(".admin-move-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
       const shortcutId = btn.getAttribute("data-shortcut-id") || "";
@@ -1195,6 +1214,7 @@ function bindItemEvents(container) {
   // 管理员快捷操作监听：删除
   container.querySelectorAll(".admin-delete-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const fileId = btn.getAttribute("data-id");
       const shortcutId = btn.getAttribute("data-shortcut-id") || "";
@@ -1328,24 +1348,15 @@ function updateStreamSourceUI() {
   dom.streamSourceToggleBtn.classList.add("flex");
 
   if (state.isGooglePreview) {
-    if (is4K && !canPlayNatively) {
-      dom.streamSourceText.textContent = "⚡ 4K 原画硬解 (外部播放器)";
-      dom.streamSourceToggleBtn.className =
-        "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border-amber-500/30";
-      dom.streamSourceToggleBtn.title = "MKV 封装浏览器无法原生硬解 4K，点击一键唤出 MPV / ExoPlayer 进行 4K 无损硬件直出！";
-    } else {
-      dom.streamSourceText.textContent = is4K ? "⚡ 切换 4K 原画 (直链)" : "⚡ 切换原画 (直链)";
-      dom.streamSourceToggleBtn.className =
-        "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700";
-      dom.streamSourceToggleBtn.title = is4K
-        ? "当前为 Google 云端转码预览 (Google 官方封顶 1080P)。点击即可无缝切换为 4K (2160p) 无损原画！"
-        : "当前为 Google 预览，点击切换为原始视频直链播放";
-    }
+    dom.streamSourceText.textContent = is4K ? "⚡ 切换 4K 原画 (内置)" : "⚡ 切换内置原画 (直链)";
+    dom.streamSourceToggleBtn.className =
+      "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border-amber-500/30";
+    dom.streamSourceToggleBtn.title = "当前为 Google 预览模式。点击返回内置原画播放器";
   } else {
-    dom.streamSourceText.textContent = is4K ? "⚡ 4K 原画 (当前)" : "⚡ 原画 (当前)";
+    dom.streamSourceText.textContent = is4K ? "⚡ 4K 原画 (当前)" : "⚡ 原画直出 (当前)";
     dom.streamSourceToggleBtn.className =
       "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 hover:text-emerald-300 border-emerald-500/30";
-    dom.streamSourceToggleBtn.title = "当前为无损原画输出。点击可切换为 Google 云端转码预览 (最高1080P)";
+    dom.streamSourceToggleBtn.title = "当前使用应用内置原生播放器。点击可备选切换为 Google 云端预览 (最高1080P)";
   }
 }
 
@@ -1946,36 +1957,25 @@ function openMediaPlayer(item) {
     };
   }
 
-  // 4K 与视频格式智能起播策略
+  // 智能起播策略：所有音视频一律默认使用应用内置播放器 (Plyr + 原画流)，彻底杜绝 Google 官方预览弹窗
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
     const resBadge = getVideoResolution(item);
     const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
     const canPlayNatively = canBrowserPlayNatively(item);
 
-    // 如果是 4K 且浏览器能原生解码，直接以真 4K 原画流启动，彻底突破 Google 预览 1080P 上限！
-    if (is4K && canPlayNatively) {
-      renderPlayerMedia(item, streamUrl);
-      dom.codecWarningBanner.classList.add("hidden");
-    } else {
-      // 默认走 Google 预览通道
-      renderGooglePreview(item);
-      // 针对 4K 提示 Google 限制
-      if (is4K) {
-        dom.codecWarningBanner.classList.remove("hidden");
-        const bannerSpan = dom.codecWarningBanner.querySelector("span");
-        if (bannerSpan) {
-          bannerSpan.innerHTML =
-            "当前视频为 <strong>4K (2160p)</strong>。Google 官方云端转码最高封顶 1080P；如需观赏真 4K 原画，可点击标题旁<strong>「⚡ 切换 4K 原画」</strong>或点击右上角使用 <strong>MPV / ExoPlayer</strong> 硬件直出！";
-        }
-      } else {
-        const isSpecialFormat = /\.(mkv|avi|flv|wmv|ts)$/i.test(item.name) || /10bit|hevc|h265/i.test(item.name);
-        if (isSpecialFormat) {
-          dom.codecWarningBanner.classList.remove("hidden");
-        } else {
-          dom.codecWarningBanner.classList.add("hidden");
-        }
+    // 默认一律直接起播内置播放器
+    renderPlayerMedia(item, streamUrl);
+
+    if (!canPlayNatively) {
+      dom.codecWarningBanner.classList.remove("hidden");
+      const bannerSpan = dom.codecWarningBanner.querySelector("span");
+      if (bannerSpan) {
+        bannerSpan.innerHTML =
+          "当前视频封装或编码（如部分高规格 MKV / HEVC）可能需要系统硬件解码；如遇黑屏，推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播！";
       }
+    } else {
+      dom.codecWarningBanner.classList.add("hidden");
     }
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
@@ -1994,7 +1994,7 @@ function openMediaPlayer(item) {
   }
 }
 
-// 渲染 Google 官方转码预览（所有视频格式统一采用 Google 预览最高画质通道）
+// 渲染 Google 官方转码预览（严格受限沙箱与全宽顶部防护，彻底杜绝弹窗与重定向）
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
@@ -2010,8 +2010,10 @@ function renderGooglePreview(item) {
 
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
 
-  // 严格隔离模式：iframe 禁用 allow-popups 与 allow-popups-to-escape-sandbox，并从 DOM 级别封死所有新窗口/弹窗跳转！
-  // 同时右上角覆盖全透明屏障阻断光标悬浮触发，彻底杜绝 Google 弹出新窗口问题！
+  // 严格沙箱隔离：
+  // 1. 移除 allow-same-origin，阻止内部脚本获取或跨越父级上下文；
+  // 2. 严禁 allow-popups 与 allow-popups-to-escape-sandbox，浏览器底层无条件拦截 window.open 与 target="_blank"；
+  // 3. 顶部覆盖全宽透明安全防护罩（贯穿整行，高 60px），从 DOM 物理层拦截对 Google 片名链接与右上角 Pop-out 弹出按钮的点击
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
@@ -2020,12 +2022,12 @@ function renderGooglePreview(item) {
         class="border-0 w-full h-full" 
         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        sandbox="allow-scripts allow-forms allow-presentation"
         loading="eager"
       ></iframe>
-      <!-- 右上角完全透明安全防护罩：彻底拦截任何点击或悬停动作，无黑点，不遮挡画面 -->
+      <!-- 顶部全宽透明安全防护罩：彻底拦截任何对 Google 顶栏链接与 Pop-out 弹窗的点击动作，且不遮挡底部播放控制 -->
       <div 
-        class="absolute top-0 right-0 w-28 h-20 z-30 cursor-default" 
+        class="absolute top-0 left-0 right-0 h-16 z-30 cursor-default select-none" 
         style="background: transparent; pointer-events: auto;"
         onclick="event.stopPropagation(); event.preventDefault();"
         onmousedown="event.stopPropagation(); event.preventDefault();"
@@ -2056,11 +2058,16 @@ function renderPlayerMedia(item, streamUrl) {
     video.className = "w-full h-full";
     video.style.objectFit = "contain";
 
-    // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，立即自动无缝切换为 Google 预览
+    // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，优先友好提示用户并推荐外部播放器，杜绝自动弹出 Google 预览
     video.addEventListener("error", () => {
+      if (!video.src || video.src === "about:blank") return;
       dom.codecWarningBanner.classList.remove("hidden");
-      renderGooglePreview(item);
-      showToast("当前浏览器内核无法解码画面，已自动为你切换为 Google 预览");
+      const bannerSpan = dom.codecWarningBanner.querySelector("span");
+      if (bannerSpan) {
+        bannerSpan.innerHTML =
+          "当前视频画面或音频编码在当前浏览器内核下受限。推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播，或点击标题旁<strong>「⚡ 切换转码预览」</strong>。";
+      }
+      showToast("内置内核解码受限，推荐使用右上角外部播放器");
     });
 
     dom.mediaWrapper.appendChild(video);
@@ -2137,19 +2144,12 @@ function toggleStreamSource() {
   const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
   const resBadge = getVideoResolution(item);
   const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
-  const canPlayNatively = canBrowserPlayNatively(item);
 
   if (state.isGooglePreview) {
-    if (!canPlayNatively) {
-      // 浏览器内核原生不支持 MKV 封装，自动展开外部播放器菜单并提示
-      dom.extPlayerMenu.classList.remove("hidden");
-      showToast("MKV 封装浏览器无法直接硬解 4K，请在弹出的菜单中选择 MPV / ExoPlayer 本地秒播！");
-      return;
-    }
-    showToast(is4K ? "正在切换至 4K (2160p) 无损原画播放..." : "正在切换至原画直链播放...");
+    showToast(is4K ? "正在切换至 4K 原画直链播放..." : "正在切换至内置原画播放...");
     renderPlayerMedia(item, streamUrl);
   } else {
-    showToast("正在切换至 Google 云端转码预览 (最高1080P)...");
+    showToast("正在切换至 Google 云端转码预览 (受限安全模式)...");
     renderGooglePreview(item);
   }
 }
@@ -2406,6 +2406,28 @@ function setupEventListeners() {
   if (dom.streamSourceToggleBtn) {
     dom.streamSourceToggleBtn.addEventListener("click", toggleStreamSource);
   }
+
+  // 拦截播放器下载按钮与外部播放器空链接的默认行为
+  if (dom.playerDownloadBtn) {
+    dom.playerDownloadBtn.addEventListener("click", (e) => {
+      const href = dom.playerDownloadBtn.getAttribute("href");
+      if (!href || href === "#") {
+        e.preventDefault();
+      }
+    });
+  }
+
+  [dom.btnMpv, dom.btnExoplayer, dom.btnPotplayer, dom.btnVlc, dom.btnIina, dom.btnInfuse].forEach((btn) => {
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        const href = btn.getAttribute("href");
+        if (!href || href === "#") {
+          e.preventDefault();
+          showToast("未检测到有效视频流地址");
+        }
+      });
+    }
+  });
 
   // 外部播放器菜单点击切换
   dom.extPlayerMenuBtn.addEventListener("click", (e) => {
