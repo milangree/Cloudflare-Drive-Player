@@ -387,13 +387,17 @@ function renderGridView(items) {
             }
             ${
               resBadge
-                ? `<div class="absolute top-2 right-2 z-10">
-                    <span class="px-2 py-0.5 text-[10px] font-bold bg-brand-500/95 text-white rounded shadow-md backdrop-blur border border-brand-400/40 tracking-wide">${resBadge}</span>
+                ? `<div class="absolute top-1.5 right-1.5 z-10 pointer-events-none">
+                    <span class="inline-flex items-center px-2 py-0.5 text-[9px] font-black tracking-widest uppercase text-white rounded-full bg-gradient-to-r from-amber-500/90 to-orange-600/95 backdrop-blur-md border border-white/25 shadow-[0_2px_8px_rgba(249,115,22,0.45)] transition-transform duration-200 group-hover:scale-105">${resBadge}</span>
                   </div>`
                 : ""
             }
-            <div class="absolute bottom-2 right-2 flex items-center gap-1">
-              ${ext ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-black/80 backdrop-blur text-white rounded shadow-sm">${ext}</span>` : ""}
+            <div class="absolute bottom-1.5 right-1.5 z-10 pointer-events-none">
+              ${
+                ext
+                  ? `<span class="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase text-slate-200 rounded-md bg-black/65 backdrop-blur-md border border-white/15 shadow-[0_2px_6px_rgba(0,0,0,0.5)]">${ext}</span>`
+                  : ""
+              }
             </div>
           </div>
         `;
@@ -401,7 +405,7 @@ function renderGridView(items) {
 
       return `
         <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group cursor-pointer relative" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          ${!mediaPosterHtml && resBadge ? `<span class="absolute top-3 right-3 text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30 font-bold">${resBadge}</span>` : ""}
+          ${!mediaPosterHtml && resBadge ? `<span class="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-black tracking-widest uppercase">${resBadge}</span>` : ""}
           <div>
             ${mediaPosterHtml}
             <div class="flex items-start gap-3">
