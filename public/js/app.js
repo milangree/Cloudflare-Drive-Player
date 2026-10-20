@@ -535,11 +535,40 @@ function bindItemEvents(container) {
 
 // 导航到指定文件夹
 function navigateToFolder(folderId, folderName) {
+  // 如果点击的是根目录，直接重置面包屑为单一根项
+  if (folderId === state.rootFolderId) {
+    state.breadcrumbs = [{ id: state.rootFolderId, name: state.rootName }];
+    state.currentFolderId = state.rootFolderId;
+    dom.searchInput.value = "";
+    state.searchQuery = "";
+    dom.clearSearchBtn.classList.add("hidden");
+    loadFolder(state.rootFolderId);
+    return;
+  }
+
+  // 如果当前在根目录，而点击的子项名称与根目录同名（如根叫“我的媒体库”，里面又放了一个“我的媒体库”文件夹/快捷方式）
+  // 保持单层根名称，更新 ID 为真实文件夹 ID，绝不出现“我的媒体库 > 我的媒体库”
+  if (state.breadcrumbs.length === 1 && folderName === state.breadcrumbs[0].name) {
+    state.breadcrumbs[0].id = folderId;
+    state.currentFolderId = folderId;
+    dom.searchInput.value = "";
+    state.searchQuery = "";
+    dom.clearSearchBtn.classList.add("hidden");
+    loadFolder(folderId);
+    return;
+  }
+
   const existingIdx = state.breadcrumbs.findIndex((b) => b.id === folderId);
   if (existingIdx !== -1) {
     state.breadcrumbs = state.breadcrumbs.slice(0, existingIdx + 1);
   } else {
-    state.breadcrumbs.push({ id: folderId, name: folderName });
+    // 检查防止同名连续堆叠
+    const lastCrumb = state.breadcrumbs[state.breadcrumbs.length - 1];
+    if (lastCrumb && lastCrumb.name === folderName) {
+      lastCrumb.id = folderId;
+    } else {
+      state.breadcrumbs.push({ id: folderId, name: folderName });
+    }
   }
 
   state.currentFolderId = folderId;
@@ -552,16 +581,34 @@ function navigateToFolder(folderId, folderName) {
 
 // 渲染面包屑导航
 function renderBreadcrumbs() {
+  // 安全去重：消除任何连续同名的层级（如“我的媒体库 > 我的媒体库”）
+  const dedupedCrumbs = [];
+  state.breadcrumbs.forEach((b) => {
+    if (dedupedCrumbs.length === 0 || dedupedCrumbs[dedupedCrumbs.length - 1].name !== b.name) {
+      dedupedCrumbs.push(b);
+    }
+  });
+  state.breadcrumbs = dedupedCrumbs;
+
   dom.breadcrumbs.innerHTML = state.breadcrumbs
     .map((b, idx) => {
       const isLast = idx === state.breadcrumbs.length - 1;
+      const isRoot = idx === 0;
       return `
         <div class="flex items-center gap-1.5">
-          ${idx > 0 ? `<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-600"></i>` : ""}
-          <button class="px-2 py-1 rounded hover:bg-slate-800/80 transition-colors ${
-            isLast ? "text-brand-500 font-semibold cursor-default" : "text-slate-300 hover:text-white"
-          }" data-crumb-id="${b.id}" ${isLast ? "disabled" : ""}>
-            ${b.name}
+          ${idx > 0 ? `<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-600 flex-shrink-0"></i>` : ""}
+          <button 
+            class="px-2 py-1 rounded transition-colors flex items-center gap-1.5 ${
+              isLast && !isRoot
+                ? "text-brand-400 font-semibold cursor-default"
+                : "text-slate-300 hover:text-white hover:bg-slate-800/80 cursor-pointer"
+            }" 
+            data-crumb-id="${b.id}"
+            data-crumb-idx="${idx}"
+            title="${isRoot ? "点击返回主界面" : b.name}"
+          >
+            ${isRoot ? `<i data-lucide="hard-drive" class="w-3.5 h-3.5 text-brand-500 flex-shrink-0"></i>` : ""}
+            <span>${b.name}</span>
           </button>
         </div>
       `;
@@ -571,6 +618,15 @@ function renderBreadcrumbs() {
   dom.breadcrumbs.querySelectorAll("[data-crumb-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-crumb-id");
+      const idx = parseInt(btn.getAttribute("data-crumb-idx"), 10);
+
+      // 点击第一项（我的媒体库），无条件返回主界面
+      if (idx === 0) {
+        state.breadcrumbs = [{ id: state.rootFolderId, name: state.rootName }];
+        navigateToFolder(state.rootFolderId, state.rootName);
+        return;
+      }
+
       if (id !== state.currentFolderId) {
         const item = state.breadcrumbs.find((b) => b.id === id);
         navigateToFolder(id, item ? item.name : "文件夹");
@@ -664,24 +720,18 @@ function renderGooglePreview(item) {
   state.isGooglePreview = true;
   const isPortrait = isPortraitMedia(item);
 
-  // 针对竖屏视频动态设置高度与最小高度，彻底解决 Google 预览在竖屏下上下画面被裁剪的问题
-  const iframeHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh;";
+  // 容器裁剪法：Google 预览顶栏高约 50px，通过负 margin-top 完美裁切掉顶栏与弹出按钮，彻底根除黑点问题
+  const containerHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh; min-height: 480px;";
   dom.mediaWrapper.innerHTML = `
-    <div class="relative w-full h-full flex items-center justify-center overflow-hidden">
+    <div class="relative w-full h-full overflow-hidden flex items-center justify-center bg-black rounded-b-2xl" style="${containerHeight}">
       <iframe 
         src="https://drive.google.com/file/d/${item.id}/preview" 
-        class="w-full border-0 rounded-b-xl" 
-        style="display: block; ${iframeHeight}"
+        class="w-full border-0" 
+        style="display: block; width: 100%; height: calc(100% + 50px); margin-top: -50px;"
         allow="autoplay; fullscreen"
+        sandbox="allow-scripts allow-same-origin allow-presentation"
         loading="eager"
       ></iframe>
-      <!-- 遮罩层：彻底隐藏 Google 预览右上角的弹出窗口按钮 (Pop-out ↗)，并拦截点击 -->
-      <div 
-        class="absolute top-0 right-0 w-16 h-14 z-20 pointer-events-auto cursor-default" 
-        style="background-color: #000;" 
-        onclick="event.stopPropagation()"
-        title=""
-      ></div>
     </div>
   `;
 }
