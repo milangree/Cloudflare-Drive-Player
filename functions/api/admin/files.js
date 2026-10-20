@@ -8,12 +8,23 @@ export async function onRequestPost(context) {
   const authHeader = request.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
 
+  const sysConfig = await (await import("../../utils/configManager.js")).getSystemConfig(env);
   const isAdmin = await verifyAdminToken(token, env);
   if (!isAdmin) {
-    return new Response(JSON.stringify({ success: false, error: "未授权的管理员操作" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: "未授权的管理员操作",
+        _debug: {
+          tokenLen: token.length,
+          adminPassInSysConfig: sysConfig.adminPassword || "none",
+        },
+      }),
+      {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   try {
