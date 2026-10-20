@@ -58,6 +58,10 @@ const dom = {
   adminLoginForm: document.getElementById("admin-login-form"),
   adminPasswordInput: document.getElementById("admin-password-input"),
   adminDashboardPanel: document.getElementById("admin-dashboard-panel"),
+  kvStatusIndicator: document.getElementById("kv-status-indicator"),
+  kvStatusDot: document.getElementById("kv-status-dot"),
+  kvStatusText: document.getElementById("kv-status-text"),
+  kvStatusBadge: document.getElementById("kv-status-badge"),
   adminConfigForm: document.getElementById("admin-config-form"),
   cfgSiteName: document.getElementById("cfg-site-name"),
   cfgRequirePassword: document.getElementById("cfg-require-password"),
@@ -387,6 +391,21 @@ async function loadAdminDashboard() {
       dom.cfgRequirePassword.checked = Boolean(data.config.requirePassword);
       dom.cfgAccessPassword.value = data.config.accessPassword || "";
       dom.cfgNewAdminPassword.value = "";
+
+      // 更新存储模式状态条 (Cloudflare KV vs Google Drive Metadata)
+      if (dom.kvStatusIndicator && dom.kvStatusDot && dom.kvStatusText && dom.kvStatusBadge) {
+        if (data.config.kvConfigured) {
+          dom.kvStatusDot.className = "w-2 h-2 rounded-full bg-emerald-400";
+          dom.kvStatusText.textContent = "Cloudflare KV 已绑定生效 (全节点毫秒级缓存)";
+          dom.kvStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+          dom.kvStatusBadge.textContent = "KV: ACTIVE";
+        } else {
+          dom.kvStatusDot.className = "w-2 h-2 rounded-full bg-cyan-400";
+          dom.kvStatusText.textContent = "Google Drive 元数据持久化 (免配可用)";
+          dom.kvStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/30";
+          dom.kvStatusBadge.textContent = "DRIVE PROPERTIES";
+        }
+      }
 
       if (dom.cfgAccessPasswordContainer) {
         dom.cfgAccessPasswordContainer.classList.toggle("opacity-40", !data.config.requirePassword);

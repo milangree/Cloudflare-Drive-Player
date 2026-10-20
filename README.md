@@ -100,7 +100,7 @@ npm run deploy
 
 ---
 
-### 第三步：配置环境变量
+### 第三步：配置环境变量与存储绑定
 
 在 Cloudflare Dashboard 中，进入你的 Pages 项目：
 - 依次点击：**Settings (设置) -> Environment variables (环境变量) -> Production (生产环境)**。
@@ -112,6 +112,16 @@ npm run deploy
 | `ROOT_FOLDER_ID` | **推荐** | 挂载的总文件夹 ID（如 `1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l`）。 |
 | `SITE_NAME` | 选填 | 自定义网站标题，例如 `我的私人影视库`。 |
 
+> 💡 **系统内置持久化存储机制**：
+> * **开箱即用（免配 KV）**：系统已内置 Google Drive 根文件夹元数据 properties 机制，自动持久化存储后台配置与密码，重启与冷启动永不丢失！
+> * **进阶加速（绑定 Cloudflare KV）**：若希望利用 Cloudflare 边缘节点就近毫秒级响应，可按以下步骤绑定 KV：
+>   1. 前往 Cloudflare Dashboard -> **Workers & Pages** -> **KV**，点击 **Create Namespace** 创建命名空间（例如 `cf-drive-player-kv`）。
+>   2. 返回 Pages 项目 -> **Settings** -> **Functions** -> 下拉找到 **KV namespace bindings**。
+>   3. 点击 **Add binding**：
+>      - **Variable name (变量名)**：必须准确填写 `DRIVE_KV`（区分大小写）。
+>      - **KV namespace (命名空间)**：下拉选择刚创建的 `cf-drive-player-kv`。
+>   4. 点击保存后，在最新部署右侧点击 **Retry deployment (重新部署)** 即可激活。登录后台管理窗口将看到绿色的 `KV: ACTIVE` 状态标记。
+
 > 💡 **跨盘与多盘使用技巧（方案 A）**：
 > 1. 在 Google Drive 建一个总目录（例如 `我的影音库`），将其 ID 填入 `ROOT_FOLDER_ID`。
 > 2. **如何挂载其他盘/团队盘/不同账号的文件夹？**
@@ -119,7 +129,7 @@ npm run deploy
 >    - 本项目底层已深度适配 Google Drive 快捷方式穿透解析，点击快捷方式即可像本地文件夹一样原生穿透访问其他盘！
 >    - 增删改盘全部在 Google Drive 网页完成，**彻底告别在 Cloudflare 环境变量中维护长加密串！**
 
-> 💡 **提示**：添加完环境变量后，在 Pages 的 **Deployments (部署)** 页面中点击最新一次部署右侧的 `Retry deployment (重新部署)` 即可生效！
+> 💡 **提示**：添加完环境变量或 KV 绑定后，在 Pages 的 **Deployments (部署)** 页面中点击最新一次部署右侧的 `Retry deployment (重新部署)` 即可生效！
 
 ---
 

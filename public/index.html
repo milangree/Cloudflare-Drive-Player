@@ -420,6 +420,18 @@
 
       <!-- 管理员操作面板 (登录后显示) -->
       <div id="admin-dashboard-panel" class="hidden flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+        <!-- 存储状态指示条 -->
+        <div id="kv-status-indicator" class="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-900/50 text-xs">
+          <div class="flex items-center gap-2">
+            <span id="kv-status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span class="text-slate-300 font-medium">配置存储状态:</span>
+            <span id="kv-status-text" class="text-slate-400">检测中...</span>
+          </div>
+          <span id="kv-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">
+            DRIVE_KV
+          </span>
+        </div>
+
         <!-- 基础配置表单 -->
         <form id="admin-config-form" class="space-y-4">
           <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3.5">
