@@ -146,3 +146,29 @@
   transform-origin: bottom right;
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* Plyr 外挂字幕增强样式 (对齐 OpenList 影音体验) */
+.plyr__captions {
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+  padding-bottom: 2.2rem !important;
+  z-index: 15 !important;
+}
+
+.plyr__caption {
+  background: rgba(0, 0, 0, 0.78) !important;
+  backdrop-filter: blur(4px) !important;
+  border-radius: 6px !important;
+  padding: 4px 12px !important;
+  color: #fff !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.4 !important;
+}
+
+@media (max-width: 640px) {
+  .plyr__captions {
+    font-size: 0.95rem !important;
+    padding-bottom: 1.25rem !important;
+  }
+}

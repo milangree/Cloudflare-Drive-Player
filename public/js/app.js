@@ -20,6 +20,9 @@ const state = {
   activeMediaItem: null,
   isGooglePreview: false,
   isPlayerMaximized: false,
+  activeSubtitleBlobUrl: null,
+  activeSubtitleItem: null,
+  currentSubtitleOffset: 0,
   accessToken: localStorage.getItem("access_token") || "",
   adminToken: localStorage.getItem("admin_token") || "",
   isAdmin: false,
@@ -117,6 +120,21 @@ const dom = {
   playerAutoplayText: document.getElementById("player-autoplay-text"),
   playerPrevBtn: document.getElementById("player-prev-btn"),
   playerNextBtn: document.getElementById("player-next-btn"),
+  playerSubtitlesBtn: document.getElementById("player-subtitles-btn"),
+  playerSubtitlesIndicator: document.getElementById("player-subtitles-indicator"),
+  playerSubtitlesMenu: document.getElementById("player-subtitles-menu"),
+  currentSubLabel: document.getElementById("current-sub-label"),
+  subtitlesTrackList: document.getElementById("subtitles-track-list"),
+  btnUploadLocalSub: document.getElementById("btn-upload-local-sub"),
+  localSubInput: document.getElementById("local-sub-input"),
+  subtitleOffsetVal: document.getElementById("subtitle-offset-val"),
+  btnSubDelay: document.getElementById("btn-sub-delay"),
+  btnSubAdvance: document.getElementById("btn-sub-advance"),
+  btnSubReset: document.getElementById("btn-sub-reset"),
+  resumePlaybackBanner: document.getElementById("resume-playback-banner"),
+  resumeBannerTime: document.getElementById("resume-banner-time"),
+  resumeRestartBtn: document.getElementById("resume-restart-btn"),
+  resumeCloseBtn: document.getElementById("resume-close-btn"),
   closePlayerBtn: document.getElementById("close-player-btn"),
   streamSourceToggleBtn: document.getElementById("stream-source-toggle-btn"),
   streamSourceText: document.getElementById("stream-source-text"),
@@ -1437,6 +1455,438 @@ function toggleAutoPlayNext() {
   showToast(state.autoPlayNext ? "已开启同名连续剧自动连播" : "已关闭自动连播");
 }
 
+// ==========================================
+// 播放器增强：断点记忆播放与外挂字幕 (OpenList 设计对齐)
+// ==========================================
+
+const PROGRESS_STORAGE_KEY = "cf_player_progress";
+const SPEED_STORAGE_KEY = "cf_player_speed";
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function convertSrtToVtt(srtText) {
+  let text = (srtText || "").replace(/^\uFEFF/, "");
+  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // 修正单数位小时 0:01:23,456 -> 00:01:23.456
+  text = text.replace(/(\b\d:\d{2}:\d{2}),(\d{3})/g, "0$1.$2");
+  // 转换毫秒逗号为点 00:01:23,456 -> 00:01:23.456
+  text = text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+  return "WEBVTT\n\n" + text.trim() + "\n";
+}
+
+function getPlaybackProgress(fileId) {
+  try {
+    const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw);
+    return map[fileId] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function savePlaybackProgress(fileId, currentTime, duration, name) {
+  try {
+    const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    const now = Date.now();
+    for (const id in map) {
+      if (now - (map[id].updatedAt || 0) > 30 * 86400 * 1000) {
+        delete map[id];
+      }
+    }
+    map[fileId] = {
+      time: Math.floor(currentTime),
+      duration: Math.floor(duration || 0),
+      updatedAt: now,
+      name: name || "",
+    };
+    localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(map));
+  } catch (_) {}
+}
+
+function clearPlaybackProgress(fileId) {
+  try {
+    const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    delete map[fileId];
+    localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(map));
+  } catch (_) {}
+}
+
+function formatDuration(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) {
+    return `${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  }
+  return `${m < 10 ? "0" : ""}${s}`;
+}
+
+let resumeBannerTimer = null;
+function showResumeBanner(seconds, onRestart) {
+  if (!dom.resumePlaybackBanner || !dom.resumeBannerTime) return;
+  if (resumeBannerTimer) {
+    clearTimeout(resumeBannerTimer);
+    resumeBannerTimer = null;
+  }
+
+  dom.resumeBannerTime.textContent = formatDuration(seconds);
+  dom.resumePlaybackBanner.classList.remove("hidden");
+  dom.resumePlaybackBanner.classList.add("flex");
+
+  if (dom.resumeRestartBtn) {
+    dom.resumeRestartBtn.onclick = () => {
+      dom.resumePlaybackBanner.classList.add("hidden");
+      dom.resumePlaybackBanner.classList.remove("flex");
+      if (typeof onRestart === "function") onRestart();
+    };
+  }
+
+  if (dom.resumeCloseBtn) {
+    dom.resumeCloseBtn.onclick = () => {
+      dom.resumePlaybackBanner.classList.add("hidden");
+      dom.resumePlaybackBanner.classList.remove("flex");
+    };
+  }
+
+  resumeBannerTimer = setTimeout(() => {
+    if (dom.resumePlaybackBanner) {
+      dom.resumePlaybackBanner.classList.add("hidden");
+      dom.resumePlaybackBanner.classList.remove("flex");
+    }
+  }, 6000);
+}
+
+function setupResumePlayback(item, mediaElement) {
+  const saved = getPlaybackProgress(item.id);
+  let resumed = false;
+
+  const tryResume = () => {
+    if (resumed) return;
+    if (saved && saved.time > 5 && (!saved.duration || saved.time < saved.duration - 10)) {
+      resumed = true;
+      try {
+        mediaElement.currentTime = saved.time;
+      } catch (_) {}
+      showResumeBanner(saved.time, () => {
+        try {
+          mediaElement.currentTime = 0;
+          clearPlaybackProgress(item.id);
+          showToast("已从头开始播放");
+        } catch (_) {}
+      });
+    }
+  };
+
+  mediaElement.addEventListener("loadedmetadata", tryResume, { once: true });
+  mediaElement.addEventListener("canplay", tryResume, { once: true });
+
+  // 节流定时保存播放进度 (每 2.5 秒)
+  let lastSaveTime = 0;
+  mediaElement.addEventListener("timeupdate", () => {
+    const now = Date.now();
+    if (now - lastSaveTime > 2500) {
+      lastSaveTime = now;
+      if (mediaElement.currentTime > 5 && mediaElement.duration && mediaElement.currentTime < mediaElement.duration - 10) {
+        savePlaybackProgress(item.id, mediaElement.currentTime, mediaElement.duration, item.name);
+      }
+    }
+  });
+}
+
+function getSubtitlesInFolder(videoItem) {
+  if (!state.items || !state.items.length) return [];
+  const subExts = ["vtt", "srt", "ass", "sub"];
+  const subs = state.items.filter((f) => {
+    if (f.isFolder) return false;
+    const ext = (f.name.split(".").pop() || "").toLowerCase();
+    return subExts.includes(ext);
+  });
+
+  if (!subs.length) return [];
+
+  // 获取视频基础名称（剥离扩展名）
+  const videoBase = videoItem.name.replace(/\.[^/.]+$/, "").toLowerCase();
+
+  return subs
+    .map((sub) => {
+      const subBase = sub.name.replace(/\.[^/.]+$/, "").toLowerCase();
+      const isMatched = subBase === videoBase || subBase.startsWith(videoBase) || videoBase.startsWith(subBase);
+      return {
+        item: sub,
+        isMatched,
+        name: sub.name,
+        ext: (sub.name.split(".").pop() || "").toLowerCase(),
+      };
+    })
+    .sort((a, b) => (b.isMatched ? 1 : 0) - (a.isMatched ? 1 : 0));
+}
+
+async function loadSubtitleTrack(videoElement, subItem, makeDefault = true) {
+  try {
+    const streamUrl = `/api/stream/${subItem.id}`;
+    let vttUrl = streamUrl;
+    const ext = (subItem.name.split(".").pop() || "").toLowerCase();
+
+    if (ext === "srt" || ext === "ass") {
+      const resp = await fetch(streamUrl);
+      if (!resp.ok) throw new Error("无法读取字幕流");
+      const srtText = await resp.text();
+      const vttText = convertSrtToVtt(srtText);
+      const blob = new Blob([vttText], { type: "text/vtt;charset=utf-8" });
+      if (state.activeSubtitleBlobUrl) {
+        try {
+          URL.revokeObjectURL(state.activeSubtitleBlobUrl);
+        } catch (_) {}
+      }
+      vttUrl = URL.createObjectURL(blob);
+      state.activeSubtitleBlobUrl = vttUrl;
+    }
+
+    // 移除已有 track
+    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
+
+    const track = document.createElement("track");
+    track.kind = "captions";
+    track.label = subItem.name;
+    track.srclang = "zh";
+    track.src = vttUrl;
+    if (makeDefault) {
+      track.default = true;
+    }
+    videoElement.appendChild(track);
+
+    state.activeSubtitleItem = subItem;
+    state.currentSubtitleOffset = 0;
+    updateSubtitlesUI();
+
+    // 激活 textTracks 并开启 showing
+    setTimeout(() => {
+      if (videoElement.textTracks && videoElement.textTracks.length > 0) {
+        for (let i = 0; i < videoElement.textTracks.length; i++) {
+          videoElement.textTracks[i].mode = "showing";
+        }
+      }
+    }, 200);
+
+    showToast(`已挂载字幕: ${subItem.name}`);
+  } catch (err) {
+    console.error("加载字幕失败:", err);
+    showToast(`加载字幕失败: ${err.message}`);
+  }
+}
+
+async function loadLocalSubtitleFile(file, videoElement) {
+  try {
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const text = await file.text();
+    let vttText = text;
+    if (ext === "srt" || ext === "ass") {
+      vttText = convertSrtToVtt(text);
+    }
+    const blob = new Blob([vttText], { type: "text/vtt;charset=utf-8" });
+    if (state.activeSubtitleBlobUrl) {
+      try {
+        URL.revokeObjectURL(state.activeSubtitleBlobUrl);
+      } catch (_) {}
+    }
+    const vttUrl = URL.createObjectURL(blob);
+    state.activeSubtitleBlobUrl = vttUrl;
+
+    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
+
+    const track = document.createElement("track");
+    track.kind = "captions";
+    track.label = file.name;
+    track.srclang = "zh";
+    track.src = vttUrl;
+    track.default = true;
+    videoElement.appendChild(track);
+
+    state.activeSubtitleItem = { id: "local", name: file.name, isLocal: true };
+    state.currentSubtitleOffset = 0;
+    updateSubtitlesUI();
+
+    setTimeout(() => {
+      if (videoElement.textTracks && videoElement.textTracks.length > 0) {
+        for (let i = 0; i < videoElement.textTracks.length; i++) {
+          videoElement.textTracks[i].mode = "showing";
+        }
+      }
+    }, 200);
+
+    showToast(`已挂载本地字幕: ${file.name}`);
+  } catch (err) {
+    showToast(`解析本地字幕失败: ${err.message}`);
+  }
+}
+
+function disableSubtitles(videoElement) {
+  if (videoElement) {
+    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
+    if (videoElement.textTracks) {
+      for (let i = 0; i < videoElement.textTracks.length; i++) {
+        videoElement.textTracks[i].mode = "disabled";
+      }
+    }
+  }
+  if (state.activeSubtitleBlobUrl) {
+    try {
+      URL.revokeObjectURL(state.activeSubtitleBlobUrl);
+    } catch (_) {}
+    state.activeSubtitleBlobUrl = null;
+  }
+  state.activeSubtitleItem = null;
+  state.currentSubtitleOffset = 0;
+  updateSubtitlesUI();
+  showToast("已关闭字幕");
+}
+
+function adjustSubtitleOffset(deltaSeconds, videoElement) {
+  if (!videoElement || !videoElement.textTracks || !videoElement.textTracks.length) {
+    showToast("当前暂无激活的字幕轨道");
+    return;
+  }
+  const track = Array.from(videoElement.textTracks).find((t) => t.mode === "showing") || videoElement.textTracks[0];
+  if (!track || !track.cues || !track.cues.length) {
+    showToast("当前字幕无可用时间点或尚未完成加载");
+    return;
+  }
+
+  for (let i = 0; i < track.cues.length; i++) {
+    const cue = track.cues[i];
+    cue.startTime = Math.max(0, cue.startTime + deltaSeconds);
+    cue.endTime = Math.max(0, cue.endTime + deltaSeconds);
+  }
+
+  state.currentSubtitleOffset = (state.currentSubtitleOffset || 0) + deltaSeconds;
+  const sign = state.currentSubtitleOffset > 0 ? "+" : "";
+  const offsetText = `${sign}${state.currentSubtitleOffset.toFixed(1)}s`;
+  if (dom.subtitleOffsetVal) dom.subtitleOffsetVal.textContent = offsetText;
+  showToast(`字幕时间轴已微调: ${offsetText}`);
+}
+
+function resetSubtitleOffset(videoElement) {
+  if (!state.currentSubtitleOffset) {
+    showToast("当前字幕偏移已是 0.0s");
+    return;
+  }
+  adjustSubtitleOffset(-state.currentSubtitleOffset, videoElement);
+  state.currentSubtitleOffset = 0;
+  if (dom.subtitleOffsetVal) dom.subtitleOffsetVal.textContent = "0.0s";
+  showToast("字幕时间轴已重置为 0.0s");
+}
+
+function updateSubtitlesUI() {
+  if (state.activeSubtitleItem) {
+    if (dom.playerSubtitlesIndicator) dom.playerSubtitlesIndicator.classList.remove("hidden");
+    if (dom.currentSubLabel) dom.currentSubLabel.textContent = state.activeSubtitleItem.name || "已开启";
+    if (dom.playerSubtitlesBtn) dom.playerSubtitlesBtn.classList.add("text-brand-400");
+  } else {
+    if (dom.playerSubtitlesIndicator) dom.playerSubtitlesIndicator.classList.add("hidden");
+    if (dom.currentSubLabel) dom.currentSubLabel.textContent = "未开启";
+    if (dom.playerSubtitlesBtn) dom.playerSubtitlesBtn.classList.remove("text-brand-400");
+  }
+  if (dom.subtitleOffsetVal) {
+    const sign = (state.currentSubtitleOffset || 0) > 0 ? "+" : "";
+    dom.subtitleOffsetVal.textContent = `${sign}${(state.currentSubtitleOffset || 0).toFixed(1)}s`;
+  }
+}
+
+function renderSubtitlesMenu(videoItem, subList, video) {
+  if (!dom.subtitlesTrackList) return;
+
+  let html = `
+    <!-- 关闭字幕 -->
+    <button type="button" class="w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-slate-800 text-slate-300 transition-colors sub-track-item ${!state.activeSubtitleItem ? 'text-brand-400 font-medium bg-brand-500/10' : ''}" data-sub-action="disable">
+      <div class="flex items-center gap-2">
+        <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+        <span>关闭字幕</span>
+      </div>
+      ${!state.activeSubtitleItem ? '<i data-lucide="check" class="w-3.5 h-3.5 text-brand-400"></i>' : ''}
+    </button>
+  `;
+
+  if (subList && subList.length > 0) {
+    html += `<div class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">目录内检测到字幕 (${subList.length})</div>`;
+    subList.forEach((s) => {
+      const isActive = state.activeSubtitleItem && state.activeSubtitleItem.id === s.item.id;
+      html += `
+        <button type="button" class="w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-slate-800 text-slate-300 transition-colors sub-track-item ${isActive ? 'text-brand-400 font-medium bg-brand-500/10' : ''}" data-sub-id="${s.item.id}">
+          <div class="flex items-center gap-2 min-w-0 pr-2">
+            <span class="text-[10px] font-mono px-1 py-0.2 rounded ${s.isMatched ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}">${s.ext.toUpperCase()}</span>
+            <span class="truncate text-xs ${s.isMatched ? 'text-white' : 'text-slate-300'}">${escapeHtml(s.name)}</span>
+          </div>
+          ${isActive ? '<i data-lucide="check" class="w-3.5 h-3.5 text-brand-400 flex-shrink-0"></i>' : ''}
+        </button>
+      `;
+    });
+  } else {
+    html += `
+      <div class="px-3 py-2 text-slate-500 text-[11px] text-center">
+        当前目录下未检测到字幕文件
+      </div>
+    `;
+  }
+
+  dom.subtitlesTrackList.innerHTML = html;
+  if (window.lucide) lucide.createIcons();
+
+  // 绑定点击事件
+  dom.subtitlesTrackList.querySelectorAll(".sub-track-item").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const action = btn.getAttribute("data-sub-action");
+      if (action === "disable") {
+        disableSubtitles(video);
+        renderSubtitlesMenu(videoItem, subList, video);
+        return;
+      }
+      const subId = btn.getAttribute("data-sub-id");
+      const target = subList.find((s) => s.item.id === subId);
+      if (target) {
+        await loadSubtitleTrack(video, target.item, true);
+        renderSubtitlesMenu(videoItem, subList, video);
+      }
+    };
+  });
+}
+
+async function autoDetectAndAttachSubtitles(videoItem, video) {
+  if (state.activeSubtitleBlobUrl) {
+    try {
+      URL.revokeObjectURL(state.activeSubtitleBlobUrl);
+    } catch (_) {}
+    state.activeSubtitleBlobUrl = null;
+  }
+  state.activeSubtitleItem = null;
+  state.currentSubtitleOffset = 0;
+
+  const subList = getSubtitlesInFolder(videoItem);
+  renderSubtitlesMenu(videoItem, subList, video);
+
+  // 存在自动匹配的同名字幕时，优先直接挂载
+  const matched = subList.find((s) => s.isMatched);
+  if (matched) {
+    await loadSubtitleTrack(video, matched.item, true);
+    renderSubtitlesMenu(videoItem, subList, video);
+  } else {
+    updateSubtitlesUI();
+  }
+}
+
 // 打开流媒体播放器
 function openMediaPlayer(item) {
   destroyPlayer();
@@ -1584,6 +2034,7 @@ function renderGooglePreview(item) {
     </div>
   `;
   updateStreamSourceUI();
+  updateSubtitlesUI();
 }
 
 // 渲染播放器内部内容
@@ -1591,6 +2042,8 @@ function renderPlayerMedia(item, streamUrl) {
   destroyPlayer();
   state.isGooglePreview = false;
   dom.mediaWrapper.innerHTML = "";
+
+  const savedSpeed = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY)) || 1;
 
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
@@ -1613,15 +2066,30 @@ function renderPlayerMedia(item, streamUrl) {
     dom.mediaWrapper.appendChild(video);
 
     state.playerInstance = new Plyr(video, {
-      speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+      speed: { selected: savedSpeed, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
       keyboard: { focused: true, global: true },
       autoplay: true,
       ratio: null,
       resetOnEnd: true,
+      captions: { active: true, language: "auto", update: true },
     });
+
+    // 监听倍速变化并记忆
+    state.playerInstance.on("ratechange", () => {
+      if (state.playerInstance && state.playerInstance.speed) {
+        localStorage.setItem(SPEED_STORAGE_KEY, state.playerInstance.speed);
+      }
+    });
+
+    // 自动挂载同名外挂字幕 (OpenList 影音体验)
+    autoDetectAndAttachSubtitles(item, video);
+
+    // 断点记忆播放：检查并恢复上次播放进度 (OpenList 影音体验)
+    setupResumePlayback(item, video);
 
     // 监听视频播完事件：若开启了连播，自动连播同名/连续剧下一集
     state.playerInstance.on("ended", () => {
+      clearPlaybackProgress(item.id);
       if (state.autoPlayNext) {
         playAdjacentEpisode(1);
       }
@@ -1636,11 +2104,21 @@ function renderPlayerMedia(item, streamUrl) {
     dom.mediaWrapper.appendChild(audio);
 
     state.playerInstance = new Plyr(audio, {
+      speed: { selected: savedSpeed, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
       autoplay: true,
     });
 
+    state.playerInstance.on("ratechange", () => {
+      if (state.playerInstance && state.playerInstance.speed) {
+        localStorage.setItem(SPEED_STORAGE_KEY, state.playerInstance.speed);
+      }
+    });
+
+    setupResumePlayback(item, audio);
+
     // 监听音频播完事件：自动下一曲
     state.playerInstance.on("ended", () => {
+      clearPlaybackProgress(item.id);
       if (state.autoPlayNext) {
         playAdjacentEpisode(1);
       }
@@ -1648,6 +2126,7 @@ function renderPlayerMedia(item, streamUrl) {
   }
 
   updateStreamSourceUI();
+  updateSubtitlesUI();
 }
 
 // 在 Google 预览 与 4K/原始无损原画直链之间一秒热切换
@@ -1759,11 +2238,30 @@ function closePlayer() {
     dom.streamSourceToggleBtn.classList.remove("flex");
   }
   dom.extPlayerMenu.classList.add("hidden");
+  if (dom.playerSubtitlesMenu) dom.playerSubtitlesMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
   dom.playerModal.classList.remove("flex");
 }
 
 function destroyPlayer() {
+  if (resumeBannerTimer) {
+    clearTimeout(resumeBannerTimer);
+    resumeBannerTimer = null;
+  }
+  if (dom.resumePlaybackBanner) {
+    dom.resumePlaybackBanner.classList.add("hidden");
+    dom.resumePlaybackBanner.classList.remove("flex");
+  }
+  if (state.activeSubtitleBlobUrl) {
+    try {
+      URL.revokeObjectURL(state.activeSubtitleBlobUrl);
+    } catch (_) {}
+    state.activeSubtitleBlobUrl = null;
+  }
+  state.activeSubtitleItem = null;
+  state.currentSubtitleOffset = 0;
+  updateSubtitlesUI();
+
   if (state.playerInstance) {
     try {
       state.playerInstance.stop();
@@ -1913,11 +2411,69 @@ function setupEventListeners() {
   dom.extPlayerMenuBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     dom.extPlayerMenu.classList.toggle("hidden");
+    if (dom.playerSubtitlesMenu) dom.playerSubtitlesMenu.classList.add("hidden");
   });
+
+  // 外挂字幕菜单点击切换 (OpenList 播放器增强)
+  if (dom.playerSubtitlesBtn && dom.playerSubtitlesMenu) {
+    dom.playerSubtitlesBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (state.isGooglePreview) {
+        showToast("外挂字幕将在切换为原画直链播放时生效，点击片名旁【切换原画】即可启用！");
+      }
+      dom.playerSubtitlesMenu.classList.toggle("hidden");
+      if (dom.extPlayerMenu) dom.extPlayerMenu.classList.add("hidden");
+    });
+  }
+
+  // 本地上传字幕触发 (.srt / .vtt)
+  if (dom.btnUploadLocalSub && dom.localSubInput) {
+    dom.btnUploadLocalSub.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dom.localSubInput.click();
+    });
+
+    dom.localSubInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const video = document.getElementById("active-player");
+      if (!video) {
+        showToast("请在原画播放模式下挂载字幕");
+        return;
+      }
+      loadLocalSubtitleFile(file, video);
+      if (dom.playerSubtitlesMenu) dom.playerSubtitlesMenu.classList.add("hidden");
+      e.target.value = "";
+    });
+  }
+
+  // 字幕时间轴微调按键绑定 (+0.5s / -0.5s / 重置)
+  if (dom.btnSubDelay) {
+    dom.btnSubDelay.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const video = document.getElementById("active-player");
+      adjustSubtitleOffset(0.5, video);
+    });
+  }
+  if (dom.btnSubAdvance) {
+    dom.btnSubAdvance.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const video = document.getElementById("active-player");
+      adjustSubtitleOffset(-0.5, video);
+    });
+  }
+  if (dom.btnSubReset) {
+    dom.btnSubReset.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const video = document.getElementById("active-player");
+      resetSubtitleOffset(video);
+    });
+  }
 
   // 点击外部空白区域自动关闭所有菜单
   document.addEventListener("click", () => {
     dom.extPlayerMenu.classList.add("hidden");
+    if (dom.playerSubtitlesMenu) dom.playerSubtitlesMenu.classList.add("hidden");
   });
 
   // 前台站点访问密码表单提交

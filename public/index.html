@@ -205,6 +205,59 @@
 
           <div class="h-3.5 w-px bg-slate-800 mx-0.5"></div>
 
+          <!-- 外挂字幕控制菜单下拉 (OpenList 播放器增强) -->
+          <div class="relative inline-block text-left" id="subtitles-dropdown-container">
+            <button id="player-subtitles-btn" class="p-1.5 sm:px-2 sm:py-1 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/60 transition-colors flex items-center gap-1 cursor-pointer" title="外挂字幕设置 (同名自动识别 / 本地上传 / 时间轴微调)">
+              <i data-lucide="subtitles" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+              <span id="player-subtitles-indicator" class="hidden text-[10px] px-1.5 py-0.2 bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded font-medium">字幕</span>
+            </button>
+
+            <!-- 字幕下拉菜单浮层 (OpenList 精致质感) -->
+            <div id="player-subtitles-menu" class="hidden absolute right-0 mt-2 w-72 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-800 shadow-2xl py-2 z-50 text-xs text-slate-200 select-none divide-y divide-slate-800/60">
+              <!-- 顶部标题与状态 -->
+              <div class="px-3.5 py-2 flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="subtitles" class="w-3.5 h-3.5 text-brand-400"></i>
+                  <span>外挂字幕</span>
+                </span>
+                <span id="current-sub-label" class="text-[10px] text-slate-400 truncate max-w-[120px] bg-slate-800 px-1.5 py-0.5 rounded">未开启</span>
+              </div>
+
+              <!-- 字幕选择项列表 -->
+              <div class="py-1 max-h-48 overflow-y-auto" id="subtitles-track-list">
+                <!-- 动态生成 -->
+              </div>
+
+              <!-- 本地上传字幕 -->
+              <div class="py-1.5 px-2">
+                <button id="btn-upload-local-sub" class="w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-colors">
+                  <i data-lucide="folder-up" class="w-3.5 h-3.5 text-sky-400"></i>
+                  <span>加载本地字幕 (.srt / .vtt)</span>
+                </button>
+                <input type="file" id="local-sub-input" accept=".srt,.vtt" class="hidden" />
+              </div>
+
+              <!-- 时间轴微调 (Offset) -->
+              <div class="p-3 bg-slate-950/40">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] text-slate-400">字幕时间轴微调:</span>
+                  <span id="subtitle-offset-val" class="text-[11px] font-mono text-brand-400 font-semibold">0.0s</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button id="btn-sub-delay" class="flex-1 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] transition-colors border border-slate-700 text-center" title="字幕延后 0.5 秒">
+                    +0.5s 延后
+                  </button>
+                  <button id="btn-sub-advance" class="flex-1 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] transition-colors border border-slate-700 text-center" title="字幕提前 0.5 秒">
+                    -0.5s 提前
+                  </button>
+                  <button id="btn-sub-reset" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[11px] transition-colors border border-slate-700" title="重置偏移为 0.0s">
+                    重置
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 外部播放器菜单下拉 (精简图标按钮) -->
           <div class="relative inline-block text-left" id="ext-player-dropdown-container">
             <button id="ext-player-menu-btn" class="p-1.5 sm:px-2 sm:py-1 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 text-brand-400 hover:text-brand-300 border border-brand-500/30 transition-colors flex items-center gap-1" title="调用本地播放器 (MPV / ExoPlayer / PotPlayer / VLC)">
@@ -303,9 +356,23 @@
       </div>
 
       <!-- 媒体挂载容器 -->
-      <div class="flex-1 min-h-0 bg-black flex items-center justify-center overflow-hidden">
+      <div class="flex-1 min-h-0 bg-black flex items-center justify-center overflow-hidden relative">
         <div id="media-wrapper" class="w-full h-full min-h-0 flex items-center justify-center">
           <!-- 动态创建 <video> 或 <audio> -->
+        </div>
+
+        <!-- 断点记忆播放提示浮层 (OpenList 经典轻质感微交互) -->
+        <div id="resume-playback-banner" class="hidden absolute left-4 bottom-14 sm:bottom-16 z-30 items-center gap-3 px-3.5 py-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-brand-500/50 text-slate-100 shadow-2xl transition-all duration-300 text-xs">
+          <div class="flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4 text-brand-400"></i>
+            <span>已为您恢复至 <strong id="resume-banner-time" class="text-brand-300 font-mono">00:00</strong></span>
+          </div>
+          <button id="resume-restart-btn" class="px-2 py-0.5 rounded bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/40 text-[11px] font-medium transition-colors cursor-pointer">
+            从头播放
+          </button>
+          <button id="resume-close-btn" class="text-slate-400 hover:text-white p-0.5 transition-colors cursor-pointer" title="关闭提示">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
         </div>
       </div>
     </div>
