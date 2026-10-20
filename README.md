@@ -108,10 +108,24 @@ npm run deploy
 | `DRIVES` | **推荐** | **支持挂载多个盘**。格式示例：`动漫:1-3i..., 电影:1abc..., 音乐:1xyz...`，也可以是标准 JSON 数组格式。 |
 | `ROOT_FOLDER_ID` | 选填 | 挂载单个根文件夹 ID（仅在未配置 `DRIVES` 时作为单盘兜底）。 |
 | `SITE_NAME` | 选填 | 自定义网站标题，例如 `我的私人影视库`。 |
-| `CF_ACCOUNT_ID` | 选填 | Cloudflare 账户 ID（开启 Cloudflare Stream 云端切片自适应流支持）。 |
-| `CF_STREAM_API_TOKEN` | 选填 | 拥有 `Stream: Edit` 权限的 Cloudflare API 令牌。 |
 
 > 💡 **提示**：添加完环境变量后，在 Pages 的 **Deployments (部署)** 页面中点击最新一次部署右侧的 `Retry deployment (重新部署)` 即可生效！
+
+---
+
+## 📺 全格式极速秒播支持 (MKV / HEVC 10-bit / 特殊编码)
+
+针对现代浏览器 `<video>` 无法原生解封装 MKV 容器以及部分设备缺少 HEVC 硬解授权的问题，本项目内置了**全平台原生播放器无缝调起体系**：
+
+- **⚡ MPV 播放器 (跨平台)**：
+  - 点击「MPV 播放器」直接通过 `mpv://` 协议秒开；
+  - 提供 **「复制 MPV 终端命令」** 按钮，复制后在命令行一键运行：`mpv "直链"`，支持全特效字幕与全格式硬解！
+- **📱 Android ExoPlayer (原生 Intent)**：
+  - 点击「ExoPlayer (Android)」通过系统级 `intent:` 调用底层 ExoPlayer 内核播放器（如 Just Player、Next Player、VLC 等），实现 Android 手机与电视盒子的硬件秒开！
+- **💻 Windows PotPlayer**：点击一键调起本地 PotPlayer 极速硬件加速。
+- **🍎 macOS IINA**：点击一键调起基于 MPV 核心的 IINA 播放器。
+- **📺 Apple TV / iOS Infuse**：点击一键打开 Infuse 播放。
+- **🌐 Google 官方转码通道**：在任何无本地播放器的公共设备上，可点击「Google 预览」查看官方转码切片。
 
 ---
 
