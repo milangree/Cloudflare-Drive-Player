@@ -752,13 +752,22 @@ function renderGooglePreview(item) {
   // 针对竖屏视频动态设置高度与最小高度，彻底解决 Google 预览在竖屏下上下画面被裁剪的问题
   const iframeHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh;";
   dom.mediaWrapper.innerHTML = `
-    <iframe 
-      src="https://drive.google.com/file/d/${item.id}/preview" 
-      class="w-full border-0 rounded-b-xl" 
-      style="display: block; ${iframeHeight}"
-      allow="autoplay; fullscreen"
-      loading="eager"
-    ></iframe>
+    <div class="relative w-full h-full flex items-center justify-center overflow-hidden">
+      <iframe 
+        src="https://drive.google.com/file/d/${item.id}/preview" 
+        class="w-full border-0 rounded-b-xl" 
+        style="display: block; ${iframeHeight}"
+        allow="autoplay; fullscreen"
+        loading="eager"
+      ></iframe>
+      <!-- 遮罩层：彻底隐藏 Google 预览右上角的弹出窗口按钮 (Pop-out ↗)，并拦截点击 -->
+      <div 
+        class="absolute top-0 right-0 w-16 h-14 z-20 pointer-events-auto cursor-default" 
+        style="background-color: #000;" 
+        onclick="event.stopPropagation()"
+        title=""
+      ></div>
+    </div>
   `;
 }
 
