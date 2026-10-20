@@ -20,6 +20,9 @@ const state = {
   activeMediaItem: null,
   isGooglePreview: false,
   isPlayerMaximized: false,
+  accessToken: localStorage.getItem("access_token") || "",
+  adminToken: localStorage.getItem("admin_token") || "",
+  isAdmin: false,
 };
 
 // DOM 元素引用
@@ -38,11 +41,38 @@ const dom = {
   refreshBtn: document.getElementById("refresh-btn"),
   viewModeBtn: document.getElementById("view-mode-btn"),
   viewIcon: document.getElementById("view-icon"),
+  adminEntryBtn: document.getElementById("admin-entry-btn"),
   loadingSkeleton: document.getElementById("loading-skeleton"),
   gridView: document.getElementById("grid-view"),
   listView: document.getElementById("list-view"),
   listTbody: document.getElementById("list-tbody"),
   emptyState: document.getElementById("empty-state"),
+  // 访问密码模态框
+  sitePasswordModal: document.getElementById("site-password-modal"),
+  sitePasswordForm: document.getElementById("site-password-form"),
+  sitePasswordInput: document.getElementById("site-password-input"),
+  // 后台管理模态框
+  adminModal: document.getElementById("admin-modal"),
+  closeAdminBtn: document.getElementById("close-admin-btn"),
+  adminLoginPanel: document.getElementById("admin-login-panel"),
+  adminLoginForm: document.getElementById("admin-login-form"),
+  adminPasswordInput: document.getElementById("admin-password-input"),
+  adminDashboardPanel: document.getElementById("admin-dashboard-panel"),
+  adminConfigForm: document.getElementById("admin-config-form"),
+  cfgSiteName: document.getElementById("cfg-site-name"),
+  cfgRequirePassword: document.getElementById("cfg-require-password"),
+  cfgAccessPasswordContainer: document.getElementById("cfg-access-password-container"),
+  cfgAccessPassword: document.getElementById("cfg-access-password"),
+  cfgNewAdminPassword: document.getElementById("cfg-new-admin-password"),
+  adminLogoutBtn: document.getElementById("admin-logout-btn"),
+  // 文件操作模态框
+  fileActionModal: document.getElementById("file-action-modal"),
+  fileActionTitle: document.getElementById("file-action-title"),
+  fileActionDesc: document.getElementById("file-action-desc"),
+  fileActionForm: document.getElementById("file-action-form"),
+  fileActionInput: document.getElementById("file-action-input"),
+  cancelFileActionBtn: document.getElementById("cancel-file-action-btn"),
+  confirmFileActionBtn: document.getElementById("confirm-file-action-btn"),
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
   playerDialog: document.getElementById("player-dialog"),
@@ -210,26 +240,144 @@ async function checkSystemInfo() {
       if (!data.configured) {
         dom.configGuideModal.classList.remove("hidden");
         dom.configGuideModal.classList.add("flex");
-      } else {
-        if (data.siteName) {
-          dom.siteTitle.textContent = data.siteName;
-          document.title = data.siteName;
-        }
-
-        const rootId = data.rootFolderId || "root";
-        const rootName = data.rootName || "主云盘";
-        state.rootFolderId = rootId;
-        state.rootName = rootName;
-
-        state.currentFolderId = rootId;
-        state.breadcrumbs = [{ id: rootId, name: rootName }];
-        renderBreadcrumbs();
-        loadFolder(rootId);
+        return;
       }
+
+      if (data.siteName) {
+        dom.siteTitle.textContent = data.siteName;
+        document.title = data.siteName;
+      }
+
+      const rootId = data.rootFolderId || "root";
+      const rootName = data.rootName || "主云盘";
+      state.rootFolderId = rootId;
+      state.rootName = rootName;
+
+      state.currentFolderId = rootId;
+      state.breadcrumbs = [{ id: rootId, name: rootName }];
+      renderBreadcrumbs();
+
+      // 如果启用了站点访问密码保护
+      if (data.requirePassword && !state.accessToken && !state.adminToken) {
+        openSitePasswordModal();
+        return;
+      }
+
+      loadFolder(rootId);
     }
   } catch (err) {
     console.warn("未能获取系统信息:", err);
   }
+}
+
+// 打开/切换后台管理窗口
+let currentFileAction = {};
+
+function openAdminModal() {
+  dom.adminModal.classList.remove("hidden");
+  dom.adminModal.classList.add("flex");
+
+  if (state.adminToken) {
+    state.isAdmin = true;
+    loadAdminDashboard();
+  } else {
+    dom.adminLoginPanel.classList.remove("hidden");
+    dom.adminDashboardPanel.classList.add("hidden");
+    setTimeout(() => dom.adminPasswordInput.focus(), 100);
+  }
+}
+
+// 加载后台面板数据
+async function loadAdminDashboard() {
+  dom.adminLoginPanel.classList.add("hidden");
+  dom.adminDashboardPanel.classList.remove("hidden");
+
+  try {
+    const res = await fetch("/api/admin/config", {
+      headers: { Authorization: `Bearer ${state.adminToken}` },
+    });
+    if (!res.ok) {
+      // Token 过期或失效
+      state.adminToken = "";
+      state.isAdmin = false;
+      localStorage.removeItem("admin_token");
+      dom.adminLoginPanel.classList.remove("hidden");
+      dom.adminDashboardPanel.classList.add("hidden");
+      return;
+    }
+
+    const data = await res.json();
+    if (data.success && data.config) {
+      dom.cfgSiteName.value = data.config.siteName || "";
+      dom.cfgRequirePassword.checked = Boolean(data.config.requirePassword);
+      dom.cfgAccessPassword.value = data.config.accessPassword || "";
+      dom.cfgNewAdminPassword.value = "";
+
+      if (dom.cfgAccessPasswordContainer) {
+        dom.cfgAccessPasswordContainer.classList.toggle("opacity-40", !data.config.requirePassword);
+      }
+    }
+  } catch (err) {
+    showToast("获取系统配置失败: " + err.message);
+  }
+}
+
+// 打开文件操作模态框 (重命名 / 移动)
+function openFileActionModal({ action, title, desc, defaultValue = "", placeholder = "", fileId }) {
+  currentFileAction = { action, fileId };
+  dom.fileActionTitle.textContent = title;
+  dom.fileActionDesc.textContent = desc;
+  dom.fileActionInput.value = defaultValue;
+  dom.fileActionInput.placeholder = placeholder || "";
+  dom.fileActionModal.classList.remove("hidden");
+  dom.fileActionModal.classList.add("flex");
+  setTimeout(() => {
+    dom.fileActionInput.focus();
+    dom.fileActionInput.select();
+  }, 100);
+}
+
+function closeFileActionModal() {
+  dom.fileActionModal.classList.add("hidden");
+  dom.fileActionModal.classList.remove("flex");
+  currentFileAction = {};
+}
+
+// 执行文件/文件夹操作（重命名、移动、删除）
+async function executeFileOperation(payload) {
+  try {
+    showToast("正在执行操作...");
+    const res = await fetch("/api/admin/files", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.adminToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "操作成功！");
+      await loadFolder(state.currentFolderId);
+    } else {
+      showToast("操作失败: " + (data.error || "未知原因"));
+    }
+  } catch (err) {
+    showToast("请求异常: " + err.message);
+  }
+}
+
+// 打开前台站点访问密码模态框
+function openSitePasswordModal() {
+  dom.sitePasswordModal.classList.remove("hidden");
+  dom.sitePasswordModal.classList.add("flex");
+  setTimeout(() => dom.sitePasswordInput.focus(), 100);
+}
+
+function closeSitePasswordModal() {
+  dom.sitePasswordModal.classList.add("hidden");
+  dom.sitePasswordModal.classList.remove("flex");
 }
 
 // 加载指定文件夹内容
@@ -242,8 +390,17 @@ async function loadFolder(folderId, searchKeyword = "") {
       url += `&search=${encodeURIComponent(searchKeyword.trim())}`;
     }
 
-    const res = await fetch(url);
+    const token = state.adminToken || state.accessToken || "";
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(url, { headers });
     const data = await res.json();
+
+    if (res.status === 401 && data.requirePassword) {
+      openSitePasswordModal();
+      return;
+    }
 
     if (!res.ok || !data.success) {
       throw new Error(data.error || "获取列表失败");
@@ -561,6 +718,21 @@ function renderGridView(items) {
                     </button>`
                   : ""
               }
+              ${
+                state.isAdmin
+                  ? `
+                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-name="${item.name}" title="重命名">
+                      <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 admin-move-btn" data-id="${item.id}" data-name="${item.name}" title="移动到...">
+                      <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-name="${item.name}" title="删除">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  `
+                  : ""
+              }
             </div>
           </div>
         </div>
@@ -627,6 +799,21 @@ function renderListView(items) {
                     </button>`
                   : ""
               }
+              ${
+                state.isAdmin
+                  ? `
+                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-name="${item.name}" title="重命名">
+                      <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 text-slate-400 admin-move-btn" data-id="${item.id}" data-name="${item.name}" title="移动到...">
+                      <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-name="${item.name}" title="删除">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  `
+                  : ""
+              }
             </div>
           </td>
         </tr>
@@ -676,6 +863,51 @@ function bindItemEvents(container) {
         showToast("已复制直链到剪贴板！");
       } catch (err) {
         showToast("复制失败，请手动复制");
+      }
+    });
+  });
+
+  // 管理员快捷操作监听：重命名
+  container.querySelectorAll(".admin-rename-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const fileId = btn.getAttribute("data-id");
+      const currentName = btn.getAttribute("data-name");
+      openFileActionModal({
+        action: "rename",
+        title: "重命名文件/文件夹",
+        desc: `当前名称: ${currentName}`,
+        defaultValue: currentName,
+        fileId,
+      });
+    });
+  });
+
+  // 管理员快捷操作监听：移动
+  container.querySelectorAll(".admin-move-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const fileId = btn.getAttribute("data-id");
+      const currentName = btn.getAttribute("data-name");
+      openFileActionModal({
+        action: "move",
+        title: "移动文件/文件夹",
+        desc: `将「${currentName}」移动到指定 Google Drive 文件夹 ID`,
+        defaultValue: "",
+        placeholder: "输入目标文件夹 ID (如 1xyzABC...)",
+        fileId,
+      });
+    });
+  });
+
+  // 管理员快捷操作监听：删除
+  container.querySelectorAll(".admin-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const fileId = btn.getAttribute("data-id");
+      const currentName = btn.getAttribute("data-name");
+      if (confirm(`确定要将「${currentName}」移入回收站吗？`)) {
+        await executeFileOperation({ action: "delete", fileId });
       }
     });
   });
@@ -1412,6 +1644,174 @@ function setupEventListeners() {
   document.addEventListener("click", () => {
     dom.extPlayerMenu.classList.add("hidden");
   });
+
+  // 前台站点访问密码表单提交
+  if (dom.sitePasswordForm) {
+    dom.sitePasswordForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pwd = dom.sitePasswordInput.value.trim();
+      if (!pwd) return;
+
+      try {
+        const res = await fetch("/api/admin/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "verify_access", password: pwd }),
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          state.accessToken = data.token;
+          localStorage.setItem("access_token", data.token);
+          closeSitePasswordModal();
+          showToast("密码验证成功！");
+          loadFolder(state.currentFolderId);
+        } else {
+          showToast(data.error || "访问密码错误");
+        }
+      } catch (err) {
+        showToast("验证失败: " + err.message);
+      }
+    });
+  }
+
+  // 打开后台管理模态框
+  if (dom.adminEntryBtn) {
+    dom.adminEntryBtn.addEventListener("click", () => {
+      openAdminModal();
+    });
+  }
+
+  if (dom.closeAdminBtn) {
+    dom.closeAdminBtn.addEventListener("click", () => {
+      dom.adminModal.classList.add("hidden");
+      dom.adminModal.classList.remove("flex");
+    });
+  }
+
+  // 管理员登录表单
+  if (dom.adminLoginForm) {
+    dom.adminLoginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pwd = dom.adminPasswordInput.value.trim();
+      if (!pwd) return;
+
+      try {
+        const res = await fetch("/api/admin/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "admin_login", password: pwd }),
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          state.adminToken = data.token;
+          state.isAdmin = true;
+          localStorage.setItem("admin_token", data.token);
+          dom.adminPasswordInput.value = "";
+          showToast("管理员登录成功！");
+          loadAdminDashboard();
+          renderItems(); // 重新渲染列表以展示管理员专属按钮
+        } else {
+          showToast(data.error || "管理员密码错误");
+        }
+      } catch (err) {
+        showToast("登录请求失败: " + err.message);
+      }
+    });
+  }
+
+  // 保存系统配置表单
+  if (dom.adminConfigForm) {
+    dom.adminConfigForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const siteName = dom.cfgSiteName.value.trim();
+      const requirePassword = dom.cfgRequirePassword.checked;
+      const accessPassword = dom.cfgAccessPassword.value.trim();
+      const newAdminPassword = dom.cfgNewAdminPassword.value.trim();
+
+      if (requirePassword && !accessPassword) {
+        showToast("开启密码保护时，访客密码不能为空！");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/admin/config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${state.adminToken}`,
+          },
+          body: JSON.stringify({
+            siteName,
+            requirePassword,
+            accessPassword,
+            newAdminPassword,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast("系统设置保存成功！" + (data.persisted === "kv" ? "（已持久化至 KV）" : ""));
+          if (siteName) {
+            dom.siteTitle.textContent = siteName;
+            document.title = siteName;
+          }
+          if (newAdminPassword) {
+            dom.cfgNewAdminPassword.value = "";
+          }
+        } else {
+          showToast("保存失败: " + (data.error || "未知原因"));
+        }
+      } catch (err) {
+        showToast("保存异常: " + err.message);
+      }
+    });
+  }
+
+  // 后台退出登录
+  if (dom.adminLogoutBtn) {
+    dom.adminLogoutBtn.addEventListener("click", () => {
+      state.adminToken = "";
+      state.isAdmin = false;
+      localStorage.removeItem("admin_token");
+      dom.adminModal.classList.add("hidden");
+      dom.adminModal.classList.remove("flex");
+      showToast("已退出管理员模式");
+      renderItems();
+    });
+  }
+
+  // 访客密码开关切换
+  if (dom.cfgRequirePassword) {
+    dom.cfgRequirePassword.addEventListener("change", (e) => {
+      if (dom.cfgAccessPasswordContainer) {
+        dom.cfgAccessPasswordContainer.classList.toggle("opacity-40", !e.target.checked);
+      }
+    });
+  }
+
+  // 文件操作表单提交
+  if (dom.fileActionForm) {
+    dom.fileActionForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const val = dom.fileActionInput.value.trim();
+      if (!val) return;
+
+      const action = currentFileAction.action;
+      const fileId = currentFileAction.fileId;
+
+      if (action === "rename") {
+        await executeFileOperation({ action: "rename", fileId, newName: val });
+      } else if (action === "move") {
+        await executeFileOperation({ action: "move", fileId, targetFolderId: val });
+      }
+
+      closeFileActionModal();
+    });
+  }
+
+  if (dom.cancelFileActionBtn) {
+    dom.cancelFileActionBtn.addEventListener("click", closeFileActionModal);
+  }
 
   // 键盘 Esc 关闭
   window.addEventListener("keydown", (e) => {

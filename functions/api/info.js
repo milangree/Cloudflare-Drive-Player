@@ -1,4 +1,5 @@
 import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
+import { getSystemConfig } from "../utils/configManager.js";
 
 export async function onRequestGet(context) {
   const { env } = context;
@@ -12,6 +13,7 @@ export async function onRequestGet(context) {
   try {
     const creds = getCredentials(env);
     const token = await getAccessToken(env);
+    const sysConfig = await getSystemConfig(env);
 
     const rootFolderId = creds.rootFolderId || "root";
     let rootName = "主云盘";
@@ -29,7 +31,7 @@ export async function onRequestGet(context) {
       } catch (_) {}
     }
 
-    const customSiteName = env.SITE_NAME ? env.SITE_NAME.trim() : "";
+    const customSiteName = sysConfig.siteName ? sysConfig.siteName.trim() : "";
     const displaySiteName = customSiteName || `${rootName} - Drive Player`;
 
     return new Response(
@@ -40,6 +42,7 @@ export async function onRequestGet(context) {
         rootFolderId,
         rootName,
         clientEmail: creds.clientEmail ? creds.clientEmail.replace(/(.{3}).*(@.*)/, "$1***$2") : null,
+        requirePassword: Boolean(sysConfig.requirePassword && sysConfig.accessPassword),
       }),
       {
         headers: noCacheHeaders,

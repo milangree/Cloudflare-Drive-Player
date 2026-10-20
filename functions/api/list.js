@@ -1,4 +1,5 @@
 import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
+import { verifyAccessToken, verifyAdminToken } from "../utils/configManager.js";
 
 // 内存级短缓存，避免重复切换目录频繁向 Google 查询文件夹大小与数量
 const statsCache = new Map();
@@ -43,6 +44,18 @@ async function getFolderStats(folderId, token) {
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
+
+  // 校验前台访问权限（如果开启了密码保护）
+  const authHeader = request.headers.get("Authorization") || "";
+  const clientToken = authHeader.replace(/^Bearer\s+/i, "") || url.searchParams.get("token") || "";
+
+  const isAccessValid = (await verifyAccessToken(clientToken, env)) || (await verifyAdminToken(clientToken, env));
+  if (!isAccessValid) {
+    return new Response(JSON.stringify({ success: false, requirePassword: true, error: "需要访问密码" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+  }
 
   try {
     const creds = getCredentials(env);
