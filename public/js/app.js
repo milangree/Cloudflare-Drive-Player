@@ -381,16 +381,23 @@ function renderGridView(items) {
                   </div>`
                 : ""
             }
-            <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+            ${
+              resBadge
+                ? `<div class="absolute top-2 right-2 z-10">
+                    <span class="px-2 py-0.5 text-[10px] font-bold bg-brand-500/95 text-white rounded shadow-md backdrop-blur border border-brand-400/40 tracking-wide">${resBadge}</span>
+                  </div>`
+                : ""
+            }
+            <div class="absolute bottom-2 right-2 flex items-center gap-1">
               ${ext ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-black/80 backdrop-blur text-white rounded shadow-sm">${ext}</span>` : ""}
-              ${resBadge ? `<span class="px-1.5 py-0.5 text-[10px] font-bold bg-brand-500/90 backdrop-blur text-white rounded shadow-sm">${resBadge}</span>` : ""}
             </div>
           </div>
         `;
       }
 
       return `
-        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group cursor-pointer relative" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+          ${!mediaPosterHtml && resBadge ? `<span class="absolute top-3 right-3 text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30 font-bold">${resBadge}</span>` : ""}
           <div>
             ${mediaPosterHtml}
             <div class="flex items-start gap-3">
