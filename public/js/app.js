@@ -655,17 +655,25 @@ function updateStreamSourceUI() {
 
   const resBadge = getVideoResolution(item);
   const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
+  const canPlayNatively = canBrowserPlayNatively(item);
 
   dom.streamSourceToggleBtn.classList.remove("hidden");
   dom.streamSourceToggleBtn.classList.add("flex");
 
   if (state.isGooglePreview) {
-    dom.streamSourceText.textContent = is4K ? "⚡ 切换 4K 原画 (直链)" : "⚡ 切换原画 (直链)";
-    dom.streamSourceToggleBtn.className =
-      "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700";
-    dom.streamSourceToggleBtn.title = is4K
-      ? "当前为 Google 云端转码预览 (Google 官方封顶 1080P)。点击即可无缝切换为 4K (2160p) 无损原画！"
-      : "当前为 Google 预览，点击切换为原始视频直链播放";
+    if (is4K && !canPlayNatively) {
+      dom.streamSourceText.textContent = "⚡ 4K 原画硬解 (外部播放器)";
+      dom.streamSourceToggleBtn.className =
+        "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border-amber-500/30";
+      dom.streamSourceToggleBtn.title = "MKV 封装浏览器无法原生硬解 4K，点击一键唤出 MPV / ExoPlayer 进行 4K 无损硬件直出！";
+    } else {
+      dom.streamSourceText.textContent = is4K ? "⚡ 切换 4K 原画 (直链)" : "⚡ 切换原画 (直链)";
+      dom.streamSourceToggleBtn.className =
+        "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700";
+      dom.streamSourceToggleBtn.title = is4K
+        ? "当前为 Google 云端转码预览 (Google 官方封顶 1080P)。点击即可无缝切换为 4K (2160p) 无损原画！"
+        : "当前为 Google 预览，点击切换为原始视频直链播放";
+    }
   } else {
     dom.streamSourceText.textContent = is4K ? "⚡ 4K 原画 (当前)" : "⚡ 原画 (当前)";
     dom.streamSourceToggleBtn.className =
@@ -874,8 +882,15 @@ function toggleStreamSource() {
   const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
   const resBadge = getVideoResolution(item);
   const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
+  const canPlayNatively = canBrowserPlayNatively(item);
 
   if (state.isGooglePreview) {
+    if (!canPlayNatively) {
+      // 浏览器内核原生不支持 MKV 封装，自动展开外部播放器菜单并提示
+      dom.extPlayerMenu.classList.remove("hidden");
+      showToast("MKV 封装浏览器无法直接硬解 4K，请在弹出的菜单中选择 MPV / ExoPlayer 本地秒播！");
+      return;
+    }
     showToast(is4K ? "正在切换至 4K (2160p) 无损原画播放..." : "正在切换至原画直链播放...");
     renderPlayerMedia(item, streamUrl);
   } else {
