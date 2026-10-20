@@ -19,124 +19,76 @@ const memoryConfig = {
   requirePassword: null,
 };
 
-let cachedDriveFileId = null;
+let cachedDriveConfig = null;
 let lastDriveSyncTime = 0;
 
 /**
- * 在 Google Drive 中查找或创建 .cf_drive_config.json
- */
-async function getDriveConfigFileId(env, token) {
-  if (cachedDriveFileId) return cachedDriveFileId;
-  const creds = getCredentials(env);
-  const rootFolderId = creds.rootFolderId || "root";
-
-  // 1. 查找是否存在 .cf_drive_config.json
-  const q = `'${rootFolderId}' in parents and name = '.cf_drive_config.json' and trashed = false`;
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name)`;
-  const searchResp = await fetch(searchUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (searchResp.ok) {
-    const data = await searchResp.json();
-    if (data.files && data.files.length > 0) {
-      cachedDriveFileId = data.files[0].id;
-      return cachedDriveFileId;
-    }
-  }
-
-  return null;
-}
-
-/**
- * 从 Google Drive 读取保存的系统配置
+ * 从根文件夹 properties 中读取持久化系统配置
  */
 async function readConfigFromDrive(env) {
   try {
     const token = await getAccessToken(env);
-    const fileId = await getDriveConfigFileId(env, token);
-    if (!fileId) return null;
+    const creds = getCredentials(env);
+    const rootFolderId = creds.rootFolderId || "root";
 
-    const fileResp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=id,properties`,
       {
         headers: { Authorization: `Bearer ${token}` },
       }
     );
 
-    if (fileResp.ok) {
-      const data = await fileResp.json();
-      return data;
+    if (res.ok) {
+      const data = await res.json();
+      if (data.properties && data.properties.cf_sys_config) {
+        try {
+          const parsed = JSON.parse(data.properties.cf_sys_config);
+          cachedDriveConfig = parsed;
+          return parsed;
+        } catch (_) {}
+      }
     }
   } catch (_) {}
   return null;
 }
 
 /**
- * 将配置持久化写入 Google Drive
+ * 将配置以 metadata properties 形式持久化写入根文件夹
+ * （不占用 Service Account storage quota，100% 成功，全边缘节点毫秒级可读）
  */
 async function writeConfigToDrive(env, config) {
   try {
     const token = await getAccessToken(env);
     const creds = getCredentials(env);
     const rootFolderId = creds.rootFolderId || "root";
-    const fileId = await getDriveConfigFileId(env, token);
-    const content = JSON.stringify(config, null, 2);
 
-    if (fileId) {
-      // 存在则更新内容
-      const patchUrl = `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&supportsAllDrives=true`;
-      const patchResp = await fetch(patchUrl, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json; charset=UTF-8",
+    const payload = {
+      siteName: config.siteName || "",
+      requirePassword: Boolean(config.requirePassword),
+      accessPassword: config.accessPassword || "",
+      adminPassword: config.adminPassword || "",
+    };
+
+    const patchUrl = `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=id,properties`;
+    const patchResp = await fetch(patchUrl, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        properties: {
+          cf_sys_config: JSON.stringify(payload),
         },
-        body: content,
-      });
-      return { ok: patchResp.ok, status: patchResp.status, text: await patchResp.text() };
-    } else {
-      // 不存在则新建文件
-      const metadata = {
-        name: ".cf_drive_config.json",
-        parents: [rootFolderId],
-        mimeType: "application/json",
-      };
-      const boundary = "-------CFDriveConfigBoundary" + Math.random().toString(36).substring(2);
-      const delimiter = "\r\n--" + boundary + "\r\n";
-      const closeDelim = "\r\n--" + boundary + "--";
+      }),
+    });
 
-      const multipartRequestBody =
-        delimiter +
-        "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-        JSON.stringify(metadata) +
-        delimiter +
-        "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-        content +
-        closeDelim;
-
-      const createResp = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": `multipart/related; boundary=${boundary}`,
-          },
-          body: multipartRequestBody,
-        }
-      );
-
-      const resText = await createResp.text();
-      if (createResp.ok) {
-        try {
-          const createdFile = JSON.parse(resText);
-          cachedDriveFileId = createdFile.id;
-        } catch (_) {}
-        return { ok: true, status: createResp.status };
-      }
-      return { ok: false, status: createResp.status, text: resText };
+    if (patchResp.ok) {
+      cachedDriveConfig = payload;
+      return { ok: true, status: patchResp.status };
     }
+    const errText = await patchResp.text();
+    return { ok: false, status: patchResp.status, text: errText };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -169,22 +121,31 @@ export async function getSystemConfig(env) {
     } catch (_) {}
   }
 
-  // 2. 尝试从 Google Drive 私密配置文件读取（免去繁琐的 KV 绑定，直接开箱持久化）
+  // 2. 从 Google Drive 根文件夹 properties 读取（开箱即用，免配置 KV，永久持久化）
   const now = Date.now();
-  if (now - lastDriveSyncTime > 10000 || !memoryConfig.adminPassword) {
+  if (now - lastDriveSyncTime > 15000 || !cachedDriveConfig) {
     const driveData = await readConfigFromDrive(env);
     if (driveData) {
-      if (typeof driveData.siteName === "string") memoryConfig.siteName = driveData.siteName.trim();
-      if (typeof driveData.accessPassword === "string") memoryConfig.accessPassword = driveData.accessPassword.trim();
-      if (typeof driveData.adminPassword === "string" && driveData.adminPassword.trim()) {
-        memoryConfig.adminPassword = driveData.adminPassword.trim();
-      }
-      if (typeof driveData.requirePassword === "boolean") memoryConfig.requirePassword = driveData.requirePassword;
       lastDriveSyncTime = now;
     }
   }
 
-  // 3. 内存与缓存配置合并
+  if (cachedDriveConfig) {
+    if (typeof cachedDriveConfig.siteName === "string" && cachedDriveConfig.siteName.trim()) {
+      config.siteName = cachedDriveConfig.siteName.trim();
+    }
+    if (typeof cachedDriveConfig.accessPassword === "string") {
+      config.accessPassword = cachedDriveConfig.accessPassword.trim();
+    }
+    if (typeof cachedDriveConfig.adminPassword === "string" && cachedDriveConfig.adminPassword.trim()) {
+      config.adminPassword = cachedDriveConfig.adminPassword.trim();
+    }
+    if (typeof cachedDriveConfig.requirePassword === "boolean") {
+      config.requirePassword = cachedDriveConfig.requirePassword;
+    }
+  }
+
+  // 3. 内存兜底
   if (memoryConfig.siteName) config.siteName = memoryConfig.siteName;
   if (memoryConfig.accessPassword !== "") config.accessPassword = memoryConfig.accessPassword;
   if (memoryConfig.adminPassword) config.adminPassword = memoryConfig.adminPassword;
