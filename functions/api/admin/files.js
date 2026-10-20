@@ -272,6 +272,11 @@ export async function onRequestPost(context) {
 
       if (!res.ok) {
         const errText = await res.text();
+        if (errText.includes("storageQuotaExceeded") || errText.includes("Service Accounts do not have storage quota")) {
+          throw new Error(
+            "Google Drive 服务账号本身无独立存储配额配额（Quota: 0）。直接写入需配置共享云端硬盘 (Shared Drive) 或授权 OAuth 用户凭据。若需组织内容，可使用新建文件夹或快捷方式。"
+          );
+        }
         throw new Error(`Google Drive API 创建文件失败: ${errText}`);
       }
 
@@ -315,6 +320,11 @@ export async function onRequestPost(context) {
 
       if (!res.ok) {
         const errText = await res.text();
+        if (errText.includes("storageQuotaExceeded") || errText.includes("Service Accounts do not have storage quota")) {
+          throw new Error(
+            "Google Drive 服务账号本身无独立存储配额（Quota: 0）。直接写入需配置共享云端硬盘 (Shared Drive) 或授权 OAuth 用户凭据。若需组织内容，可使用新建文件夹或快捷方式。"
+          );
+        }
         throw new Error(`初始化断点续传上传会话失败: ${errText}`);
       }
 
