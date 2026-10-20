@@ -52,8 +52,7 @@ const dom = {
   closePlayerBtn: document.getElementById("close-player-btn"),
   mediaWrapper: document.getElementById("media-wrapper"),
   codecWarningBanner: document.getElementById("codec-warning-banner"),
-  toggleGooglePreviewBtn: document.getElementById("toggle-google-preview-btn"),
-  previewModeText: document.getElementById("preview-mode-text"),
+  closeCodecWarningBtn: document.getElementById("close-codec-warning-btn"),
   extPlayerMenuBtn: document.getElementById("ext-player-menu-btn"),
   extPlayerMenu: document.getElementById("ext-player-menu"),
   btnMpv: document.getElementById("btn-mpv"),
@@ -151,6 +150,33 @@ function isPortraitMedia(item) {
     if (width && height && height > width) return true;
   }
   return false;
+}
+
+// 检测当前浏览器是否能原生使用内置内核播放该视频
+function canBrowserPlayNatively(item) {
+  if (!item.isVideo && !item.isAudio) return false;
+  if (item.isAudio) return true; // 音频格式 (mp3, wav, flac, ogg, aac) 原生广泛支持
+
+  const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
+  // 现代浏览器 <video> 无法原生解封装的容器格式
+  const unplayableContainers = ["mkv", "avi", "flv", "wmv", "rmvb", "mov", "ts", "vob", "iso"];
+  if (unplayableContainers.includes(ext)) {
+    return false;
+  }
+
+  // 针对 HEVC/H.265 编码检查（部分系统浏览器未安装 HEVC 硬解支持）
+  const isHevc = /hevc|h265|x265|10bit/i.test(item.name);
+  if (isHevc) {
+    const testVideo = document.createElement("video");
+    const canPlayHevc = !!(
+      testVideo.canPlayType('video/mp4; codecs="hevc"') ||
+      testVideo.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') ||
+      testVideo.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"')
+    );
+    if (!canPlayHevc) return false;
+  }
+
+  return true;
 }
 
 // 辅助工具：全局 Toast
@@ -699,16 +725,15 @@ function openMediaPlayer(item) {
     };
   }
 
-  // 格式判断：MKV、HEVC、AVI、FLV 常见编码不被所有浏览器直接支持
-  const isSpecialFormat = /\.(mkv|avi|flv|wmv)$/i.test(item.name);
-  if (isSpecialFormat) {
+  // 智能播放引擎判定：检测到当前浏览器无法使用自带内核播放时，全自动调用 Google 预览
+  const canPlay = canBrowserPlayNatively(item);
+  if (!canPlay) {
     dom.codecWarningBanner.classList.remove("hidden");
+    renderGooglePreview(item);
   } else {
     dom.codecWarningBanner.classList.add("hidden");
+    renderPlayerMedia(item, streamUrl);
   }
-
-  dom.previewModeText.textContent = "Google 预览";
-  renderPlayerMedia(item, streamUrl);
 
   dom.playerModal.classList.remove("hidden");
   dom.playerModal.classList.add("flex");
@@ -718,8 +743,29 @@ function openMediaPlayer(item) {
   }
 }
 
+// 渲染 Google 官方转码预览（用于浏览器原生无法解码时的自动承接）
+function renderGooglePreview(item) {
+  destroyPlayer();
+  state.isGooglePreview = true;
+  const isPortrait = isPortraitMedia(item);
+
+  // 针对竖屏视频动态设置高度与最小高度，彻底解决 Google 预览在竖屏下上下画面被裁剪的问题
+  const iframeHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh;";
+  dom.mediaWrapper.innerHTML = `
+    <iframe 
+      src="https://drive.google.com/file/d/${item.id}/preview" 
+      class="w-full border-0 rounded-b-xl" 
+      style="display: block; ${iframeHeight}"
+      allow="autoplay; fullscreen"
+      loading="eager"
+    ></iframe>
+  `;
+}
+
 // 渲染播放器内部内容
 function renderPlayerMedia(item, streamUrl) {
+  destroyPlayer();
+  state.isGooglePreview = false;
   dom.mediaWrapper.innerHTML = "";
 
   if (item.isVideo) {
@@ -734,9 +780,11 @@ function renderPlayerMedia(item, streamUrl) {
     video.className = `w-full ${isPortrait ? "h-auto max-h-[82vh]" : "max-h-[75vh]"}`;
     video.style.objectFit = "contain";
 
-    // 监听播放异常
+    // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，立即自动无缝切换为 Google 预览
     video.addEventListener("error", () => {
       dom.codecWarningBanner.classList.remove("hidden");
+      renderGooglePreview(item);
+      showToast("当前浏览器内核无法解码画面，已自动为你切换为 Google 预览");
     });
 
     dom.mediaWrapper.appendChild(video);
@@ -758,36 +806,6 @@ function renderPlayerMedia(item, streamUrl) {
     state.playerInstance = new Plyr(audio, {
       autoplay: true,
     });
-  }
-}
-
-// 切换 Google 官方转码预览模式
-function toggleGooglePreview() {
-  if (!state.activeMediaItem) return;
-  const item = state.activeMediaItem;
-  const isPortrait = isPortraitMedia(item);
-
-  if (!state.isGooglePreview) {
-    destroyPlayer();
-    state.isGooglePreview = true;
-    dom.previewModeText.textContent = "原生播放器";
-
-    // 针对竖屏视频动态设置高度与最小高度，彻底解决 Google 预览在竖屏下上下画面被裁剪的问题
-    const iframeHeight = isPortrait ? "height: 82vh; min-height: 560px;" : "height: 75vh;";
-    dom.mediaWrapper.innerHTML = `
-      <iframe 
-        src="https://drive.google.com/file/d/${item.id}/preview" 
-        class="w-full border-0 rounded-b-xl" 
-        style="display: block; ${iframeHeight}"
-        allow="autoplay; fullscreen"
-        loading="eager"
-      ></iframe>
-    `;
-  } else {
-    state.isGooglePreview = false;
-    dom.previewModeText.textContent = "Google 预览";
-    const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
-    renderPlayerMedia(item, streamUrl);
   }
 }
 
@@ -907,8 +925,12 @@ function setupEventListeners() {
     dom.configGuideModal.classList.remove("flex");
   });
 
-  // 切换 Google 预览
-  dom.toggleGooglePreviewBtn.addEventListener("click", toggleGooglePreview);
+  // 关闭编码兼容提示条
+  if (dom.closeCodecWarningBtn) {
+    dom.closeCodecWarningBtn.addEventListener("click", () => {
+      dom.codecWarningBanner.classList.add("hidden");
+    });
+  }
 
   // 外部播放器菜单点击切换
   dom.extPlayerMenuBtn.addEventListener("click", (e) => {

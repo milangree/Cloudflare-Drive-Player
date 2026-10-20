@@ -169,17 +169,10 @@
           <span id="player-file-name" class="font-medium text-sm text-slate-200 truncate">正在播放...</span>
         </div>
         <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-          <!-- 切换 Google 原生预览 -->
-          <button id="toggle-google-preview-btn" class="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors flex items-center gap-1.5" title="如果视频黑屏，尝试 Google 官方云端转码预览">
-            <i data-lucide="globe" class="w-3.5 h-3.5 text-brand-400"></i>
-            <span class="hidden sm:inline" id="preview-mode-text">Google 预览</span>
-          </button>
-
-          <!-- 外部播放器菜单下拉 -->
+          <!-- 外部播放器菜单下拉 (精简图标按钮) -->
           <div class="relative inline-block text-left" id="ext-player-dropdown-container">
-            <button id="ext-player-menu-btn" class="px-2.5 py-1 text-xs rounded-lg bg-brand-500/15 hover:bg-brand-500/25 text-brand-400 hover:text-brand-300 border border-brand-500/30 transition-colors flex items-center gap-1.5">
-              <i data-lucide="play-circle" class="w-3.5 h-3.5 text-brand-400"></i>
-              <span class="font-medium">调用本地播放器</span>
+            <button id="ext-player-menu-btn" class="p-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 text-brand-400 hover:text-brand-300 border border-brand-500/30 transition-colors flex items-center gap-1.5" title="调用本地播放器 (MPV / ExoPlayer / PotPlayer / VLC)">
+              <i data-lucide="play-circle" class="w-4 h-4 text-brand-400"></i>
               <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
             </button>
             <div id="ext-player-menu" class="hidden absolute right-0 mt-2 w-56 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-800 shadow-2xl py-1 z-50 text-xs text-slate-200 divide-y divide-slate-800/60">
@@ -257,11 +250,14 @@
       </div>
 
       <!-- MKV / 编码兼容提示条 -->
-      <div id="codec-warning-banner" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-300 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
+      <div id="codec-warning-banner" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-300 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2 min-w-0">
           <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0 text-amber-400"></i>
-          <span>当前视频采用 MKV / HEVC 编码。浏览器原生不支持该封装，建议点击右上方<strong>「调用本地播放器」</strong>使用 <strong>MPV / ExoPlayer / PotPlayer / VLC</strong> 硬件极速秒播！</span>
+          <span>当前视频浏览器原生内核无法解码播放，已自动为你切换为 Google 云端预览。推荐点击右上方图标唤起 <strong>MPV / ExoPlayer / PotPlayer</strong> 本地硬件秒播！</span>
         </div>
+        <button id="close-codec-warning-btn" class="p-1 text-amber-400/80 hover:text-amber-200 hover:bg-amber-500/20 rounded transition-colors flex-shrink-0" title="关闭提示">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
       </div>
 
       <!-- 媒体挂载容器 -->

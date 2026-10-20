@@ -140,14 +140,13 @@ export async function getResolvedDrives(env, token) {
     }
   }
 
-  // 3. 【全新推荐：零配置自动分盘】如果未手动在环境变量中配置多个盘
+  // 3. 未手动指定多个盘时：仅解析真正的云端云盘（主云端硬盘与团队共享云盘），绝不混入文件夹
   if (drives.length === 0) {
     const rootFolderId = env.ROOT_FOLDER_ID ? env.ROOT_FOLDER_ID.trim() : "";
 
-    // 模式 A：如果指定了 ROOT_FOLDER_ID（主总目录）
-    // 自动扫描 ROOT_FOLDER_ID 下的所有一级子文件夹，将其直接作为分盘选项！
+    // 1) 解析主云端硬盘
     if (rootFolderId && rootFolderId !== "root" && rootFolderId !== "auto") {
-      let rootName = "全部文件";
+      let rootName = "主云盘";
       try {
         const metaRes = await fetch(
           `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=name`,
@@ -158,63 +157,29 @@ export async function getResolvedDrives(env, token) {
           if (meta.name) rootName = meta.name;
         }
       } catch (_) {}
-
-      // 查询一级子文件夹，将其作为各个独立的分类云盘
-      try {
-        const subRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q='${rootFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)&pageSize=50&orderBy=name_natural+asc&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (subRes.ok) {
-          const subData = await subRes.json();
-          if (Array.isArray(subData.files) && subData.files.length > 0) {
-            // 首先加入总库
-            drives.push({ id: rootFolderId, name: `📁 ${rootName} (全库)`, icon: "hard-drive" });
-            // 将子文件夹作为各个独立盘
-            subData.files.forEach((f) => {
-              drives.push({ id: f.id, name: f.name, icon: "folder" });
-            });
-          }
-        }
-      } catch (_) {}
-
-      if (drives.length === 0) {
-        drives.push({ id: rootFolderId, name: rootName, icon: "hard-drive" });
-      }
+      drives.push({ id: rootFolderId, name: rootName, icon: "hard-drive" });
     } else {
-      // 模式 B：完全不填 ROOT_FOLDER_ID，全自动扫描服务账号拥有的共享文件夹与团队盘！
-      // 1) 自动发现所有 sharedWithMe 直接共享给服务账号的文件夹
-      try {
-        const sharedRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=sharedWithMe=true+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)&pageSize=50&orderBy=name_natural+asc&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (sharedRes.ok) {
-          const sharedData = await sharedRes.json();
-          if (Array.isArray(sharedData.files)) {
-            sharedData.files.forEach((f) => {
-              drives.push({ id: f.id, name: f.name, icon: "folder" });
-            });
-          }
-        }
-      } catch (_) {}
-
-      // 2) 自动发现所有团队盘 (Shared Drives)
-      try {
-        const teamRes = await fetch(
-          `https://www.googleapis.com/drive/v3/drives?pageSize=50`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (teamRes.ok) {
-          const teamData = await teamRes.json();
-          if (Array.isArray(teamData.drives)) {
-            teamData.drives.forEach((d) => {
-              drives.push({ id: d.id, name: `👥 ${d.name}`, icon: "hard-drive" });
-            });
-          }
-        }
-      } catch (_) {}
+      drives.push({ id: "root", name: "我的云端硬盘", icon: "hard-drive" });
     }
+
+    // 2) 自动扫描服务账号拥有的所有 Google 团队共享云盘 (Shared Drives)
+    try {
+      const teamRes = await fetch(
+        `https://www.googleapis.com/drive/v3/drives?pageSize=50`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (teamRes.ok) {
+        const teamData = await teamRes.json();
+        if (Array.isArray(teamData.drives)) {
+          teamData.drives.forEach((d) => {
+            // 避免重复
+            if (!drives.some((item) => item.id === d.id)) {
+              drives.push({ id: d.id, name: d.name, icon: "hard-drive" });
+            }
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   // 4. 兜底
