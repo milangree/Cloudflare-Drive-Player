@@ -4,10 +4,10 @@
 
 // 状态管理
 const state = {
-  drives: [],
-  currentDrive: null,
+  rootFolderId: "root",
+  rootName: "主云盘",
   currentFolderId: "root",
-  breadcrumbs: [{ id: "root", name: "根目录" }],
+  breadcrumbs: [{ id: "root", name: "主云盘" }],
   items: [],
   filteredItems: [],
   viewMode: localStorage.getItem("view_mode") || "grid",
@@ -35,13 +35,6 @@ const dom = {
   listView: document.getElementById("list-view"),
   listTbody: document.getElementById("list-tbody"),
   emptyState: document.getElementById("empty-state"),
-  // 多盘切换器
-  driveSelectorContainer: document.getElementById("drive-selector-container"),
-  driveSelectorBtn: document.getElementById("drive-selector-btn"),
-  currentDriveName: document.getElementById("current-drive-name"),
-  driveDropdownMenu: document.getElementById("drive-dropdown-menu"),
-  driveListContainer: document.getElementById("drive-list-container"),
-  driveCrumbDivider: document.getElementById("drive-crumb-divider"),
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
   playerDialog: document.getElementById("player-dialog"),
@@ -190,81 +183,6 @@ function showToast(message) {
   }, 2500);
 }
 
-// 多盘下拉菜单配置与渲染
-function setupDrivesUI(initialDrive) {
-  state.currentDrive = initialDrive;
-  state.currentFolderId = initialDrive.id;
-  state.breadcrumbs = [{ id: initialDrive.id, name: initialDrive.name }];
-  dom.currentDriveName.textContent = initialDrive.name;
-
-  if (state.drives.length <= 1) {
-    // 只有一个盘，隐藏切换下拉箭头
-    const arrow = dom.driveSelectorBtn.querySelector('[data-lucide="chevron-down"]');
-    if (arrow) arrow.style.display = "none";
-    dom.driveSelectorBtn.classList.remove("hover:bg-slate-800");
-    dom.driveSelectorBtn.style.cursor = "default";
-    return;
-  }
-
-  // 多个盘，渲染下拉项
-  renderDriveDropdownItems();
-}
-
-function renderDriveDropdownItems() {
-  dom.driveListContainer.innerHTML = state.drives
-    .map((drive) => {
-      const isSelected = state.currentDrive && state.currentDrive.id === drive.id;
-      return `
-        <button 
-          class="w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-800 transition-colors ${
-            isSelected ? "text-brand-400 font-semibold bg-slate-800/60" : "text-slate-300"
-          }" 
-          data-drive-id="${drive.id}"
-        >
-          <div class="flex items-center gap-2 truncate">
-            <i data-lucide="hard-drive" class="w-3.5 h-3.5 ${isSelected ? "text-brand-400" : "text-slate-400"}"></i>
-            <span class="truncate">${drive.name}</span>
-          </div>
-          ${isSelected ? `<i data-lucide="check" class="w-3.5 h-3.5 text-brand-400 flex-shrink-0"></i>` : ""}
-        </button>
-      `;
-    })
-    .join("");
-
-  dom.driveListContainer.querySelectorAll("[data-drive-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const driveId = btn.getAttribute("data-drive-id");
-      const targetDrive = state.drives.find((d) => d.id === driveId);
-      if (targetDrive && targetDrive.id !== state.currentDrive.id) {
-        switchDrive(targetDrive);
-      }
-      dom.driveDropdownMenu.classList.add("hidden");
-    });
-  });
-
-  if (window.lucide) {
-    lucide.createIcons();
-  }
-}
-
-// 切换当前激活的盘符
-function switchDrive(drive) {
-  state.currentDrive = drive;
-  state.currentFolderId = drive.id;
-  state.breadcrumbs = [{ id: drive.id, name: drive.name }];
-  dom.currentDriveName.textContent = drive.name;
-
-  // 更新 URL hash
-  window.location.hash = `#drive=${encodeURIComponent(drive.id)}`;
-
-  renderDriveDropdownItems();
-  dom.searchInput.value = "";
-  state.searchQuery = "";
-  dom.clearSearchBtn.classList.add("hidden");
-
-  loadFolder(drive.id);
-}
-
 // 获取网站配置及状态
 async function checkSystemInfo() {
   try {
@@ -280,18 +198,15 @@ async function checkSystemInfo() {
           document.title = data.siteName;
         }
 
-        if (data.drives && data.drives.length > 0) {
-          state.drives = data.drives;
-          // 解析 URL hash
-          let activeDrive = state.drives[0];
-          const hashMatch = window.location.hash.match(/drive=([^&]+)/);
-          if (hashMatch) {
-            const driveIdFromHash = decodeURIComponent(hashMatch[1]);
-            const match = state.drives.find((d) => d.id === driveIdFromHash);
-            if (match) activeDrive = match;
-          }
-          setupDrivesUI(activeDrive);
-        }
+        const rootId = data.rootFolderId || "root";
+        const rootName = data.rootName || "主云盘";
+        state.rootFolderId = rootId;
+        state.rootName = rootName;
+
+        state.currentFolderId = rootId;
+        state.breadcrumbs = [{ id: rootId, name: rootName }];
+        renderBreadcrumbs();
+        loadFolder(rootId);
       }
     }
   } catch (err) {
@@ -872,24 +787,15 @@ function showLoading(show) {
 // 事件监听与初始化
 function setupEventListeners() {
   // 返回当前盘根目录
+  // 返回当前根目录
   dom.btnHome.addEventListener("click", () => {
-    if (state.currentDrive) {
-      state.breadcrumbs = [{ id: state.currentDrive.id, name: state.currentDrive.name }];
-      navigateToFolder(state.currentDrive.id, state.currentDrive.name);
-    }
+    state.breadcrumbs = [{ id: state.rootFolderId, name: state.rootName }];
+    navigateToFolder(state.rootFolderId, state.rootName);
   });
 
   // 刷新按钮
   dom.refreshBtn.addEventListener("click", () => {
     loadFolder(state.currentFolderId, state.searchQuery);
-  });
-
-  // 多盘下拉菜单触发
-  dom.driveSelectorBtn.addEventListener("click", (e) => {
-    if (state.drives.length > 1) {
-      e.stopPropagation();
-      dom.driveDropdownMenu.classList.toggle("hidden");
-    }
   });
 
   // 视图模式切换
@@ -950,7 +856,6 @@ function setupEventListeners() {
   // 点击外部空白区域自动关闭所有菜单
   document.addEventListener("click", () => {
     dom.extPlayerMenu.classList.add("hidden");
-    dom.driveDropdownMenu.classList.add("hidden");
   });
 
   // 键盘 Esc 关闭
