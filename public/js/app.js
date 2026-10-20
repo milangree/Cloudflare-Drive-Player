@@ -571,7 +571,7 @@ function renderGridView(items) {
   bindItemEvents(dom.gridView);
 }
 
-// 渲染列表视图
+// 渲染列表视图 (不显示格式信息和分辨率标签，保持极简纯净排版)
 function renderListView(items) {
   dom.listTbody.innerHTML = items
     .map((item) => {
@@ -580,8 +580,6 @@ function renderListView(items) {
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 120);
-      const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
-      const resBadge = getVideoResolution(item);
 
       return `
         <tr class="file-row cursor-pointer group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
@@ -595,19 +593,9 @@ function renderListView(items) {
                     <i data-lucide="${icon}" class="w-4 h-4"></i>
                   </div>`
             }
-            <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-lg" title="${item.name}">
+            <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-xl" title="${item.name}">
               ${item.name}
             </span>
-            ${
-              ext && item.isVideo
-                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">${ext}</span>`
-                : ""
-            }
-            ${
-              resBadge
-                ? `<span class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-400 border border-brand-500/30 font-bold">${resBadge}</span>`
-                : ""
-            }
             ${
               item.isFolder
                 ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">${item.itemCount || 0} 个文件</span>`
