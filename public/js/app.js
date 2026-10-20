@@ -671,26 +671,32 @@ function renderGridView(items) {
       }
 
       return `
-        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group cursor-pointer relative" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group relative" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
           ${!mediaPosterHtml && resBadge ? `<span class="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-black tracking-widest uppercase">${resBadge}</span>` : ""}
           <div>
-            ${mediaPosterHtml}
+            ${
+              mediaPosterHtml
+                ? `<div class="cursor-pointer media-action-trigger" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isImage ? "image" : "preview")}" title="${item.isVideo ? "点击播放视频" : "点击查看大图"}">
+                    ${mediaPosterHtml}
+                  </div>`
+                : ""
+            }
             <div class="flex items-start gap-3">
               ${
                 !mediaPosterHtml
-                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color}">
+                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color} ${item.isFolder ? "cursor-pointer hover:border-brand-500/50 hover:bg-slate-700/50 folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "点击进入文件夹" : ""}">
                       <i data-lucide="${icon}" class="w-5 h-5"></i>
                     </div>`
                   : ""
               }
               <div class="flex-1 min-w-0">
-                <h4 class="text-sm font-medium text-slate-200 line-clamp-2 break-all group-hover:text-brand-500 transition-colors leading-snug" title="${item.name}">
+                <h4 class="text-sm font-medium text-slate-200 line-clamp-2 break-all leading-snug ${item.isFolder ? "cursor-pointer hover:text-brand-500 transition-colors folder-enter-trigger" : (isMedia ? "cursor-pointer hover:text-brand-500 transition-colors media-action-trigger" : (item.isImage ? "cursor-pointer hover:text-brand-500 transition-colors media-action-trigger" : ""))}" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isAudio ? "play" : (item.isImage ? "image" : "preview"))}" title="${item.isFolder ? `点击进入文件夹: ${item.name}` : (isMedia ? `点击播放: ${item.name}` : (item.isImage ? `点击预览: ${item.name}` : item.name))}">
                   ${item.name}
                 </h4>
                 <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
                   ${
                     item.isFolder
-                      ? `<span class="text-amber-400 font-medium">${item.itemCount || 0} 个文件</span> · <span>${formatBytes(item.size)}</span>`
+                      ? `<span class="text-amber-400 font-medium cursor-pointer hover:underline folder-enter-trigger" data-id="${item.id}">${item.itemCount || 0} 个文件</span> · <span>${formatBytes(item.size)}</span>`
                       : `<span>${formatBytes(item.size)}</span>`
                   }
                 </p>
@@ -700,20 +706,35 @@ function renderGridView(items) {
 
           <div class="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
             <span class="truncate">${formatDate(item.modifiedTime)}</span>
-            <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
+            <div class="flex items-center gap-1 opacity-90 transition-opacity">
+              ${
+                item.isFolder
+                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger" data-id="${item.id}" title="进入文件夹">
+                      <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+                      <span>打开</span>
+                    </button>`
+                  : ""
+              }
               ${
                 isMedia
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
+                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-300 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
                       <i data-lucide="play" class="w-3.5 h-3.5"></i>
                     </button>`
                   : ""
               }
               ${
+                item.isImage
+                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-300 media-action-trigger" data-id="${item.id}" data-action="image" title="查看大图">
+                      <i data-lucide="image" class="w-3.5 h-3.5"></i>
+                    </button>`
+                  : ""
+              }
+              ${
                 !item.isFolder
-                  ? `<a href="${downloadUrl}" download class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800" title="下载">
+                  ? `<a href="${downloadUrl}" download class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400" title="下载">
                       <i data-lucide="download" class="w-3.5 h-3.5"></i>
                     </a>
-                    <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
+                    <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
                       <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                     </button>`
                   : ""
@@ -754,23 +775,23 @@ function renderListView(items) {
       const thumbUrl = getHighResThumb(item, 120);
 
       return `
-        <tr class="file-row cursor-pointer group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+        <tr class="file-row group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
           <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
             ${
               thumbUrl && (item.isVideo || item.isImage)
-                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0">
+                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0 cursor-pointer media-action-trigger hover:opacity-80 transition-opacity" data-id="${item.id}" data-action="${item.isVideo ? "play" : "image"}" title="${item.isVideo ? "点击播放" : "点击预览"}">
                     <img src="${thumbUrl}" alt="" class="w-full h-full object-cover">
                   </div>`
-                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "进入文件夹" : ""}">
                     <i data-lucide="${icon}" class="w-4 h-4"></i>
                   </div>`
             }
-            <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors break-all leading-normal" title="${item.name}">
+            <span class="font-medium text-slate-200 break-all leading-normal ${item.isFolder ? "cursor-pointer hover:text-brand-500 folder-enter-trigger" : (isMedia ? "cursor-pointer hover:text-brand-500 media-action-trigger" : (item.isImage ? "cursor-pointer hover:text-brand-500 media-action-trigger" : ""))}" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isAudio ? "play" : "image")}" title="${item.isFolder ? `进入文件夹: ${item.name}` : (isMedia ? `播放: ${item.name}` : item.name)}">
               ${item.name}
             </span>
             ${
               item.isFolder
-                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0">${item.itemCount || 0} 个文件</span>`
+                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0 cursor-pointer hover:bg-amber-500/20 folder-enter-trigger" data-id="${item.id}">${item.itemCount || 0} 个文件</span>`
                 : ""
             }
           </td>
@@ -780,12 +801,27 @@ function renderListView(items) {
           <td class="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
             ${formatDate(item.modifiedTime)}
           </td>
-          <td class="px-4 py-2.5 text-right" onclick="event.stopPropagation()">
+          <td class="px-4 py-2.5 text-right">
             <div class="flex items-center justify-end gap-1">
+              ${
+                item.isFolder
+                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger mr-1" data-id="${item.id}" title="进入文件夹">
+                      <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+                      <span>打开</span>
+                    </button>`
+                  : ""
+              }
               ${
                 isMedia
                   ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-400 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
                       <i data-lucide="play" class="w-3.5 h-3.5"></i>
+                    </button>`
+                  : ""
+              }
+              ${
+                item.isImage
+                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-400 media-action-trigger" data-id="${item.id}" data-action="image" title="查看大图">
+                      <i data-lucide="image" class="w-3.5 h-3.5"></i>
                     </button>`
                   : ""
               }
@@ -826,18 +862,30 @@ function renderListView(items) {
 
 // 绑定卡片与列表行点击事件
 function bindItemEvents(container) {
-  container.querySelectorAll("[data-id]").forEach((el) => {
-    el.addEventListener("click", () => {
+  // 1. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
+  container.querySelectorAll(".folder-enter-trigger").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
       const id = el.getAttribute("data-id");
-      const type = el.getAttribute("data-type");
+      const item = state.items.find((i) => i.id === id);
+      if (item && item.isFolder) {
+        navigateToFolder(item.id, item.name);
+      }
+    });
+  });
+
+  // 2. 媒体操作事件（视频播放 / 图片预览）：点击海报预览图、标题、或具体动作按钮时触发
+  container.querySelectorAll(".media-action-trigger").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = el.getAttribute("data-id");
+      const action = el.getAttribute("data-action");
       const item = state.items.find((i) => i.id === id);
       if (!item) return;
 
-      if (type === "folder") {
-        navigateToFolder(item.id, item.name);
-      } else if (item.isVideo || item.isAudio) {
+      if (action === "play" || item.isVideo || item.isAudio) {
         openMediaPlayer(item);
-      } else if (item.isImage) {
+      } else if (action === "image" || item.isImage) {
         openImagePreview(item);
       } else {
         window.open(`/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`, "_blank");
@@ -845,6 +893,7 @@ function bindItemEvents(container) {
     });
   });
 
+  // 3. 播放按钮
   container.querySelectorAll(".play-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -854,6 +903,7 @@ function bindItemEvents(container) {
     });
   });
 
+  // 4. 复制直链按钮
   container.querySelectorAll(".copy-link-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
