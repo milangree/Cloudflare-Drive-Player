@@ -27,7 +27,7 @@ export async function onRequestPost(context) {
         return new Response(JSON.stringify({ success: false, error: "缺少文件 ID 或新名称" }), { status: 400 });
       }
 
-      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`;
+      const patchUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true&fields=id,name`;
       const res = await fetch(patchUrl, {
         method: "PATCH",
         headers: {
@@ -39,12 +39,21 @@ export async function onRequestPost(context) {
 
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Google Drive API 重命名失败: ${errText}`);
+        return new Response(
+          JSON.stringify({ success: false, error: `Google Drive API 重命名失败 (${res.status}): ${errText}` }),
+          { status: res.status, headers: { "Content-Type": "application/json" } }
+        );
       }
 
-      return new Response(JSON.stringify({ success: true, message: "重命名成功" }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      const updatedData = await res.json();
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "重命名成功",
+          file: updatedData,
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
 
     // 动作 2：移动文件或文件夹
