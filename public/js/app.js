@@ -47,6 +47,8 @@ const dom = {
   playerMaximizeBtn: document.getElementById("player-maximize-btn"),
   playerMaximizeIcon: document.getElementById("player-maximize-icon"),
   closePlayerBtn: document.getElementById("close-player-btn"),
+  streamSourceToggleBtn: document.getElementById("stream-source-toggle-btn"),
+  streamSourceText: document.getElementById("stream-source-text"),
   mediaWrapper: document.getElementById("media-wrapper"),
   codecWarningBanner: document.getElementById("codec-warning-banner"),
   closeCodecWarningBtn: document.getElementById("close-codec-warning-btn"),
@@ -643,6 +645,35 @@ function renderBreadcrumbs() {
   }
 }
 
+// 更新画质源切换按钮 UI
+function updateStreamSourceUI() {
+  const item = state.activeMediaItem;
+  if (!item || !item.isVideo || !dom.streamSourceToggleBtn) {
+    if (dom.streamSourceToggleBtn) dom.streamSourceToggleBtn.classList.add("hidden");
+    return;
+  }
+
+  const resBadge = getVideoResolution(item);
+  const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
+
+  dom.streamSourceToggleBtn.classList.remove("hidden");
+  dom.streamSourceToggleBtn.classList.add("flex");
+
+  if (state.isGooglePreview) {
+    dom.streamSourceText.textContent = is4K ? "⚡ 切换 4K 原画 (直链)" : "⚡ 切换原画 (直链)";
+    dom.streamSourceToggleBtn.className =
+      "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700";
+    dom.streamSourceToggleBtn.title = is4K
+      ? "当前为 Google 云端转码预览 (Google 官方封顶 1080P)。点击即可无缝切换为 4K (2160p) 无损原画！"
+      : "当前为 Google 预览，点击切换为原始视频直链播放";
+  } else {
+    dom.streamSourceText.textContent = is4K ? "⚡ 4K 原画 (当前)" : "⚡ 原画 (当前)";
+    dom.streamSourceToggleBtn.className =
+      "px-2.5 py-0.5 rounded-md text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 hover:text-emerald-300 border-emerald-500/30";
+    dom.streamSourceToggleBtn.title = "当前为无损原画输出。点击可切换为 Google 云端转码预览 (最高1080P)";
+  }
+}
+
 // 打开流媒体播放器
 function openMediaPlayer(item) {
   destroyPlayer();
@@ -700,22 +731,44 @@ function openMediaPlayer(item) {
     };
   }
 
-  // 播放引擎：所有视频格式一律默认调用 Google 预览
+  // 4K 与视频格式智能起播策略
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
-    // 对特殊编码展示本地硬解建议
-    const isSpecialFormat = /\.(mkv|avi|flv|wmv|ts)$/i.test(item.name) || /10bit|hevc|h265/i.test(item.name);
-    if (isSpecialFormat) {
-      dom.codecWarningBanner.classList.remove("hidden");
-    } else {
+    const resBadge = getVideoResolution(item);
+    const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
+    const canPlayNatively = canBrowserPlayNatively(item);
+
+    // 如果是 4K 且浏览器能原生解码，直接以真 4K 原画流启动，彻底突破 Google 预览 1080P 上限！
+    if (is4K && canPlayNatively) {
+      renderPlayerMedia(item, streamUrl);
       dom.codecWarningBanner.classList.add("hidden");
+    } else {
+      // 默认走 Google 预览通道
+      renderGooglePreview(item);
+      // 针对 4K 提示 Google 限制
+      if (is4K) {
+        dom.codecWarningBanner.classList.remove("hidden");
+        const bannerSpan = dom.codecWarningBanner.querySelector("span");
+        if (bannerSpan) {
+          bannerSpan.innerHTML =
+            "当前视频为 <strong>4K (2160p)</strong>。Google 官方云端转码最高封顶 1080P；如需观赏真 4K 原画，可点击标题旁<strong>「⚡ 切换 4K 原画」</strong>或点击右上角使用 <strong>MPV / ExoPlayer</strong> 硬件直出！";
+        }
+      } else {
+        const isSpecialFormat = /\.(mkv|avi|flv|wmv|ts)$/i.test(item.name) || /10bit|hevc|h265/i.test(item.name);
+        if (isSpecialFormat) {
+          dom.codecWarningBanner.classList.remove("hidden");
+        } else {
+          dom.codecWarningBanner.classList.add("hidden");
+        }
+      }
     }
-    renderGooglePreview(item);
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
     dom.codecWarningBanner.classList.add("hidden");
     renderPlayerMedia(item, streamUrl);
   }
+
+  updateStreamSourceUI();
 
   dom.playerModal.classList.remove("hidden");
   dom.playerModal.classList.add("flex");
@@ -763,6 +816,7 @@ function renderGooglePreview(item) {
       ></div>
     </div>
   `;
+  updateStreamSourceUI();
 }
 
 // 渲染播放器内部内容
@@ -780,7 +834,10 @@ function renderPlayerMedia(item, streamUrl) {
     video.controls = true;
     video.crossOrigin = "anonymous";
     video.src = streamUrl;
-    video.className = `w-full ${isPortrait ? "h-auto max-h-[82vh]" : "max-h-[75vh]"}`;
+    const heightClass = state.isPlayerMaximized
+      ? "h-[calc(100vh-49px)]"
+      : (isPortrait ? "h-auto max-h-[82vh]" : "max-h-[75vh]");
+    video.className = `w-full ${heightClass}`;
     video.style.objectFit = "contain";
 
     // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，立即自动无缝切换为 Google 预览
@@ -809,6 +866,26 @@ function renderPlayerMedia(item, streamUrl) {
     state.playerInstance = new Plyr(audio, {
       autoplay: true,
     });
+  }
+
+  updateStreamSourceUI();
+}
+
+// 在 Google 预览 与 4K/原始无损原画直链之间一秒热切换
+function toggleStreamSource() {
+  const item = state.activeMediaItem;
+  if (!item || !item.isVideo) return;
+
+  const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+  const resBadge = getVideoResolution(item);
+  const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
+
+  if (state.isGooglePreview) {
+    showToast(is4K ? "正在切换至 4K (2160p) 无损原画播放..." : "正在切换至原画直链播放...");
+    renderPlayerMedia(item, streamUrl);
+  } else {
+    showToast("正在切换至 Google 云端转码预览 (最高1080P)...");
+    renderGooglePreview(item);
   }
 }
 
@@ -884,6 +961,10 @@ function closePlayer() {
   if (dom.playerDialog) {
     dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
     dom.playerDialog.classList.add("max-w-6xl");
+  }
+  if (dom.streamSourceToggleBtn) {
+    dom.streamSourceToggleBtn.classList.add("hidden");
+    dom.streamSourceToggleBtn.classList.remove("flex");
   }
   dom.extPlayerMenu.classList.add("hidden");
   dom.playerModal.classList.add("hidden");
@@ -1000,6 +1081,11 @@ function setupEventListeners() {
     dom.closeCodecWarningBtn.addEventListener("click", () => {
       dom.codecWarningBanner.classList.add("hidden");
     });
+  }
+
+  // 画质源切换 (4K 原画 与 Google 预览)
+  if (dom.streamSourceToggleBtn) {
+    dom.streamSourceToggleBtn.addEventListener("click", toggleStreamSource);
   }
 
   // 外部播放器菜单点击切换
