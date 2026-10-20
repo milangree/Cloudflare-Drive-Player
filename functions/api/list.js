@@ -66,7 +66,7 @@ export async function onRequestGet(context) {
       "nextPageToken, files(id, name, mimeType, size, modifiedTime, thumbnailLink, iconLink, videoMediaMetadata, shortcutDetails)"
     );
     driveApiUrl.searchParams.set("orderBy", "folder, name_natural asc");
-    driveApiUrl.searchParams.set("pageSize", "100");
+    driveApiUrl.searchParams.set("pageSize", "1000");
     driveApiUrl.searchParams.set("supportsAllDrives", "true");
     driveApiUrl.searchParams.set("includeItemsFromAllDrives", "true");
 

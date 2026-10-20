@@ -13,6 +13,8 @@ const state = {
   viewMode: localStorage.getItem("view_mode") || "grid",
   sortBy: "name_asc",
   searchQuery: "",
+  pageSize: localStorage.getItem("page_size") === "all" ? "all" : (parseInt(localStorage.getItem("page_size"), 10) || 30),
+  currentPage: 1,
   playerInstance: null,
   activeMediaItem: null,
   isGooglePreview: false,
@@ -26,6 +28,10 @@ const dom = {
   breadcrumbs: document.getElementById("breadcrumbs"),
   fileCount: document.getElementById("file-count"),
   sortSelect: document.getElementById("sort-select"),
+  pageSizeSelect: document.getElementById("page-size-select"),
+  paginationBar: document.getElementById("pagination-bar"),
+  paginationInfo: document.getElementById("pagination-info"),
+  paginationControls: document.getElementById("pagination-controls"),
   searchInput: document.getElementById("search-input"),
   clearSearchBtn: document.getElementById("clear-search-btn"),
   refreshBtn: document.getElementById("refresh-btn"),
@@ -223,6 +229,7 @@ async function checkSystemInfo() {
 // 加载指定文件夹内容
 async function loadFolder(folderId, searchKeyword = "") {
   showLoading(true);
+  state.currentPage = 1;
   try {
     let url = `/api/list?folderId=${encodeURIComponent(folderId)}`;
     if (searchKeyword.trim()) {
@@ -283,30 +290,171 @@ function applyFilterAndSort() {
   renderItems();
 }
 
-// 渲染视图
-function renderItems() {
-  const items = state.filteredItems;
-  dom.fileCount.textContent = `共 ${items.length} 个项目`;
+// 滚动回到文件区域顶部
+function scrollToFilesTop() {
+  const target = document.getElementById("breadcrumbs") || dom.fileCount;
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
 
-  if (items.length === 0) {
+// 渲染分页控件与页码（支持 15/30/50/100/全部）
+function renderPagination(total, totalPages, pageSize, startNum, endNum) {
+  if (!dom.paginationBar || totalPages <= 1) {
+    if (dom.paginationBar) dom.paginationBar.classList.add("hidden");
+    return;
+  }
+
+  dom.paginationBar.classList.remove("hidden");
+  dom.paginationBar.classList.add("flex");
+
+  if (dom.paginationInfo) {
+    dom.paginationInfo.innerHTML = `
+      显示第 <span class="font-medium text-slate-200">${startNum}</span> - <span class="font-medium text-slate-200">${endNum}</span> 项，共 <span class="font-medium text-slate-200">${total}</span> 项
+    `;
+  }
+
+  if (!dom.paginationControls) return;
+
+  const current = state.currentPage;
+  let buttonsHtml = "";
+
+  // 1. 上一页按钮
+  const prevDisabled = current <= 1;
+  buttonsHtml += `
+    <button 
+      class="px-2.5 py-1 rounded-lg border border-slate-800 bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1 ${
+        prevDisabled ? "opacity-35 cursor-not-allowed hover:bg-slate-900 hover:text-slate-300" : "cursor-pointer"
+      }" 
+      data-page-action="prev" 
+      ${prevDisabled ? "disabled" : ""}
+      title="上一页"
+    >
+      <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+      <span class="hidden sm:inline">上一页</span>
+    </button>
+  `;
+
+  // 2. 紧凑型页码生成算法
+  const getPageNumbers = (curr, max) => {
+    if (max <= 7) return Array.from({ length: max }, (_, i) => i + 1);
+    if (curr <= 4) return [1, 2, 3, 4, 5, "...", max];
+    if (curr >= max - 3) return [1, "...", max - 4, max - 3, max - 2, max - 1, max];
+    return [1, "...", curr - 1, curr, curr + 1, "...", max];
+  };
+
+  const pages = getPageNumbers(current, totalPages);
+  pages.forEach((p) => {
+    if (p === "...") {
+      buttonsHtml += `<span class="px-1.5 py-1 text-slate-600 font-semibold select-none">...</span>`;
+    } else {
+      const isCur = p === current;
+      buttonsHtml += `
+        <button 
+          class="w-7 h-7 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors ${
+            isCur
+              ? "bg-brand-500 text-white shadow-md shadow-brand-500/20 cursor-default"
+              : "border border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
+          }" 
+          data-page-num="${p}"
+          ${isCur ? "disabled" : ""}
+        >
+          ${p}
+        </button>
+      `;
+    }
+  });
+
+  // 3. 下一页按钮
+  const nextDisabled = current >= totalPages;
+  buttonsHtml += `
+    <button 
+      class="px-2.5 py-1 rounded-lg border border-slate-800 bg-slate-900/90 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors flex items-center gap-1 ${
+        nextDisabled ? "opacity-35 cursor-not-allowed hover:bg-slate-900 hover:text-slate-300" : "cursor-pointer"
+      }" 
+      data-page-action="next" 
+      ${nextDisabled ? "disabled" : ""}
+      title="下一页"
+    >
+      <span class="hidden sm:inline">下一页</span>
+      <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+    </button>
+  `;
+
+  dom.paginationControls.innerHTML = buttonsHtml;
+
+  // 绑定翻页交互
+  dom.paginationControls.querySelectorAll("[data-page-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = btn.getAttribute("data-page-action");
+      if (action === "prev" && state.currentPage > 1) {
+        state.currentPage--;
+        renderItems();
+        scrollToFilesTop();
+      } else if (action === "next" && state.currentPage < totalPages) {
+        state.currentPage++;
+        renderItems();
+        scrollToFilesTop();
+      }
+    });
+  });
+
+  dom.paginationControls.querySelectorAll("[data-page-num]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const page = parseInt(btn.getAttribute("data-page-num"), 10);
+      if (page && page !== state.currentPage) {
+        state.currentPage = page;
+        renderItems();
+        scrollToFilesTop();
+      }
+    });
+  });
+}
+
+// 渲染视图 (支持分页切片渲染，防止一次性渲染过多内容导致卡顿)
+function renderItems() {
+  const total = state.filteredItems.length;
+  dom.fileCount.textContent = `共 ${total} 个项目`;
+
+  if (total === 0) {
     dom.emptyState.classList.remove("hidden");
     dom.emptyState.classList.add("flex");
     dom.gridView.innerHTML = "";
     dom.listTbody.innerHTML = "";
+    if (dom.paginationBar) dom.paginationBar.classList.add("hidden");
     return;
   }
 
   dom.emptyState.classList.add("hidden");
   dom.emptyState.classList.remove("flex");
 
+  // 根据当前每页可见数量 (pageSize) 切片出当前页项目
+  let pageItems = state.filteredItems;
+  if (state.pageSize !== "all") {
+    const size = typeof state.pageSize === "number" ? state.pageSize : 30;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+
+    // 纠偏当前页码范围
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+    if (state.currentPage < 1) state.currentPage = 1;
+
+    const startIdx = (state.currentPage - 1) * size;
+    const endIdx = Math.min(startIdx + size, total);
+    pageItems = state.filteredItems.slice(startIdx, endIdx);
+
+    renderPagination(total, totalPages, size, startIdx + 1, endIdx);
+  } else {
+    if (dom.paginationBar) dom.paginationBar.classList.add("hidden");
+  }
+
   if (state.viewMode === "grid") {
     dom.gridView.classList.remove("hidden");
     dom.listView.classList.add("hidden");
-    renderGridView(items);
+    renderGridView(pageItems);
   } else {
     dom.gridView.classList.add("hidden");
     dom.listView.classList.remove("hidden");
-    renderListView(items);
+    renderListView(pageItems);
   }
 
   if (window.lucide) {
@@ -1051,8 +1199,25 @@ function setupEventListeners() {
   // 排序切换
   dom.sortSelect.addEventListener("change", (e) => {
     state.sortBy = e.target.value;
+    state.currentPage = 1;
     applyFilterAndSort();
   });
+
+  // 每页可见数量切换 (防止一次性渲染过多内容导致卡顿)
+  if (dom.pageSizeSelect) {
+    const savedPageSize = localStorage.getItem("page_size") || "30";
+    dom.pageSizeSelect.value = savedPageSize;
+    state.pageSize = savedPageSize === "all" ? "all" : parseInt(savedPageSize, 10) || 30;
+
+    dom.pageSizeSelect.addEventListener("change", (e) => {
+      const val = e.target.value;
+      state.pageSize = val === "all" ? "all" : parseInt(val, 10);
+      localStorage.setItem("page_size", val);
+      state.currentPage = 1;
+      renderItems();
+      showToast(`已调整每页显示数量为: ${val === "all" ? "全部" : val + " 条"}`);
+    });
+  }
 
   // 实时搜索防抖
   let searchTimeout = null;

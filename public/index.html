@@ -89,8 +89,8 @@
         </nav>
       </div>
 
-      <!-- 排序过滤 -->
-      <div class="flex items-center gap-3 text-xs text-slate-400 self-end sm:self-auto">
+      <!-- 排序过滤与每页可见数量 -->
+      <div class="flex items-center flex-wrap gap-2.5 sm:gap-3 text-xs text-slate-400 self-end sm:self-auto">
         <span id="file-count">加载中...</span>
         <div class="h-3 w-px bg-slate-800"></div>
         <div class="flex items-center gap-1.5">
@@ -101,6 +101,17 @@
             <option value="time_desc">最新修改</option>
             <option value="size_desc">文件大小 ↓</option>
             <option value="size_asc">文件大小 ↑</option>
+          </select>
+        </div>
+        <div class="h-3 w-px bg-slate-800"></div>
+        <div class="flex items-center gap-1.5">
+          <span>每页:</span>
+          <select id="page-size-select" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+            <option value="15">15 条</option>
+            <option value="30" selected>30 条</option>
+            <option value="50">50 条</option>
+            <option value="100">100 条</option>
+            <option value="all">全部</option>
           </select>
         </div>
       </div>
@@ -139,6 +150,16 @@
       </div>
       <p class="text-base font-semibold text-slate-300 mb-1">未找到任何文件</p>
       <p class="text-xs text-slate-500 max-w-sm">当前目录下暂无可显示的文件或匹配结果</p>
+    </div>
+
+    <!-- 分页控制栏 (防止一次性渲染过多内容导致卡顿) -->
+    <div id="pagination-bar" class="hidden mt-8 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+      <div id="pagination-info" class="text-slate-400">
+        <!-- 动态生成：显示 1-30 / 共 85 项 -->
+      </div>
+      <div id="pagination-controls" class="flex items-center gap-1.5 select-none">
+        <!-- 动态生成：上一页、数字页码、下一页 -->
+      </div>
     </div>
 
   </main>
