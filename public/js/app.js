@@ -813,22 +813,23 @@ function renderGooglePreview(item) {
 
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
 
-  // 严格绝对定位推移裁剪：将顶栏向上偏移 56px，彻底裁切掉弹出按钮，不留缝隙；同时右上角覆盖完全透明的交互防护屏障，0 黑点 0 瑕疵
-  // 容器保持 100% 充满，随外层窗口最大化/还原平滑过渡，绝不重新加载 iframe！
+  // 100% 绝对充满且居中无偏转（top: 0; left: 0），杜绝任何向上推移，彻底修复 4K 画面被裁切的问题！
+  // 容器保持 100% 充满，随外层窗口最大化/还原/拖拽平滑过渡，绝不重新加载 iframe！
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
         src="${previewUrl}" 
-        class="border-0" 
-        style="position: absolute; top: -56px; left: 0; width: 100%; height: calc(100% + 56px);"
+        class="border-0 w-full h-full" 
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         loading="eager"
       ></iframe>
-      <!-- 右上角完全透明安全防护罩：100% 阻断鼠标悬停与点击触碰任何原生弹出动作，且无黑点色差 -->
+      <!-- 右上角完全透明安全防护罩：100% 阻断鼠标悬停与点击触碰任何原生弹出动作，且无黑点色差，零画面裁切 -->
       <div 
         class="absolute top-0 right-0 w-24 h-16 z-30 cursor-default" 
         style="background: transparent; pointer-events: auto;"
         onclick="event.stopPropagation(); event.preventDefault();"
+        title=""
       ></div>
     </div>
   `;
@@ -865,6 +866,8 @@ function renderPlayerMedia(item, streamUrl) {
       speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
       keyboard: { focused: true, global: true },
       autoplay: true,
+      ratio: null,
+      resetOnEnd: true,
     });
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");

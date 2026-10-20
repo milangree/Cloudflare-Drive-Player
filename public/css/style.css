@@ -59,6 +59,55 @@
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
+/* 彻底修复 4K 及所有宽幅/窄幅视频在播放器内被上下裁剪、控制条溢出的问题 */
+#media-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#media-wrapper .plyr {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+#media-wrapper .plyr--video.plyr--full-ui .plyr__video-wrapper {
+  height: 100% !important;
+  max-height: 100% !important;
+  padding-bottom: 0 !important; /* 彻底根除 Plyr 强制 56.25% 比例导致高度溢出被裁剪的问题 */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 1 1 auto !important;
+  background: #000 !important;
+}
+
+#media-wrapper .plyr video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important; /* 关键：100% 保持视频原生比例，保证 4K 无损画幅完整呈现，绝无任何裁剪 */
+  position: static !important;
+}
+
+#media-wrapper .plyr__controls {
+  flex-shrink: 0 !important;
+  z-index: 20 !important;
+}
+
 /* 列表行悬停平滑过渡 */
 .file-row {
   transition: background-color 0.15s ease;
