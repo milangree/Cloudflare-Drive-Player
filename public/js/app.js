@@ -686,15 +686,17 @@ function openMediaPlayer(item) {
   dom.playerFileName.title = item.name;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
 
-  // 针对竖屏与横屏视频自适应调整弹窗宽度
+  // 针对竖屏与横屏视频自适应调整弹窗宽高（确保使用固定比例高度，实现纯 CSS 尺寸缩放无需重建 iframe）
   const isPortrait = isPortraitMedia(item);
   if (dom.playerDialog) {
+    dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+    dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800");
     if (isPortrait) {
-      dom.playerDialog.classList.remove("max-w-6xl");
-      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg");
+      dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
+      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
     } else {
-      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
-      dom.playerDialog.classList.add("max-w-6xl");
+      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
+      dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
     }
   }
 
@@ -795,12 +797,9 @@ function renderGooglePreview(item) {
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
 
   // 严格绝对定位推移裁剪：将顶栏向上偏移 56px，彻底裁切掉弹出按钮，不留缝隙；同时右上角覆盖完全透明的交互防护屏障，0 黑点 0 瑕疵
-  const heightClass = state.isPlayerMaximized
-    ? "h-[calc(100vh-49px)]"
-    : (isPortrait ? "h-[82vh] min-h-[560px]" : "h-[75vh] min-h-[480px]");
-
+  // 容器保持 100% 充满，随外层窗口最大化/还原平滑过渡，绝不重新加载 iframe！
   dom.mediaWrapper.innerHTML = `
-    <div class="relative w-full ${heightClass} overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
+    <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
         src="${previewUrl}" 
         class="border-0" 
@@ -827,17 +826,13 @@ function renderPlayerMedia(item, streamUrl) {
 
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
-    const isPortrait = isPortraitMedia(item);
     const video = document.createElement("video");
     video.id = "active-player";
     video.playsInline = true;
     video.controls = true;
     video.crossOrigin = "anonymous";
     video.src = streamUrl;
-    const heightClass = state.isPlayerMaximized
-      ? "h-[calc(100vh-49px)]"
-      : (isPortrait ? "h-auto max-h-[82vh]" : "max-h-[75vh]");
-    video.className = `w-full ${heightClass}`;
+    video.className = "w-full h-full";
     video.style.objectFit = "contain";
 
     // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，立即自动无缝切换为 Google 预览
@@ -893,13 +888,19 @@ function toggleStreamSource() {
 function togglePlayerMaximize() {
   state.isPlayerMaximized = !state.isPlayerMaximized;
 
+  const previewContainer = document.getElementById("google-preview-container");
+
   if (state.isPlayerMaximized) {
-    // 最大化模式：铺满视口
+    // 最大化模式：纯 CSS 切换，撑满整个视口，iframe 毫秒不差平滑伸展，绝不重载视频！
     dom.playerModal.classList.remove("p-3", "sm:p-6");
     dom.playerModal.classList.add("p-0");
 
-    dom.playerDialog.classList.remove("max-w-6xl", "max-w-md", "sm:max-w-lg", "max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
+    dom.playerDialog.classList.remove("max-w-6xl", "max-w-md", "sm:max-w-lg", "h-[80vh]", "h-[88vh]", "rounded-2xl", "border", "border-slate-800");
     dom.playerDialog.classList.add("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+
+    if (previewContainer) {
+      previewContainer.classList.remove("rounded-b-2xl");
+    }
 
     if (dom.playerMaximizeBtn) {
       dom.playerMaximizeBtn.title = "还原窗口";
@@ -908,18 +909,24 @@ function togglePlayerMaximize() {
       dom.playerMaximizeIcon.setAttribute("data-lucide", "minimize-2");
     }
   } else {
-    // 还原窗口模式
+    // 还原窗口模式：纯 CSS 恢复原有居中尺寸
     dom.playerModal.classList.add("p-3", "sm:p-6");
     dom.playerModal.classList.remove("p-0");
 
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
+    dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800");
 
     const isPortrait = isPortraitMedia(state.activeMediaItem);
     if (isPortrait) {
-      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg");
+      dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
+      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
     } else {
-      dom.playerDialog.classList.add("max-w-6xl");
+      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
+      dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
+    }
+
+    if (previewContainer) {
+      previewContainer.classList.add("rounded-b-2xl");
     }
 
     if (dom.playerMaximizeBtn) {
@@ -928,11 +935,6 @@ function togglePlayerMaximize() {
     if (dom.playerMaximizeIcon) {
       dom.playerMaximizeIcon.setAttribute("data-lucide", "maximize-2");
     }
-  }
-
-  // 刷新当前播放器尺寸
-  if (state.activeMediaItem && state.isGooglePreview) {
-    renderGooglePreview(state.activeMediaItem);
   }
 
   if (window.lucide) {
@@ -952,15 +954,14 @@ function closePlayer() {
     dom.playerModal.classList.add("p-3", "sm:p-6");
     dom.playerModal.classList.remove("p-0");
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("max-h-[92vh]", "rounded-2xl", "border", "border-slate-800");
     if (dom.playerMaximizeIcon) {
       dom.playerMaximizeIcon.setAttribute("data-lucide", "maximize-2");
     }
   }
 
   if (dom.playerDialog) {
-    dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg");
-    dom.playerDialog.classList.add("max-w-6xl");
+    dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]", "w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
+    dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]", "rounded-2xl", "border", "border-slate-800");
   }
   if (dom.streamSourceToggleBtn) {
     dom.streamSourceToggleBtn.classList.add("hidden");
