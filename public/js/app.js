@@ -527,7 +527,7 @@ function renderGridView(items) {
                   : ""
               }
               <div class="flex-1 min-w-0">
-                <h4 class="text-sm font-medium text-slate-200 truncate group-hover:text-brand-500 transition-colors leading-tight" title="${item.name}">
+                <h4 class="text-sm font-medium text-slate-200 line-clamp-2 break-all group-hover:text-brand-500 transition-colors leading-snug" title="${item.name}">
                   ${item.name}
                 </h4>
                 <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
@@ -583,7 +583,7 @@ function renderListView(items) {
 
       return `
         <tr class="file-row cursor-pointer group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <td class="px-4 py-2.5 flex items-center gap-3">
+          <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
             ${
               thumbUrl && (item.isVideo || item.isImage)
                 ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0">
@@ -593,12 +593,12 @@ function renderListView(items) {
                     <i data-lucide="${icon}" class="w-4 h-4"></i>
                   </div>`
             }
-            <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors truncate max-w-xs sm:max-w-md lg:max-w-xl" title="${item.name}">
+            <span class="font-medium text-slate-200 group-hover:text-brand-500 transition-colors break-all leading-normal" title="${item.name}">
               ${item.name}
             </span>
             ${
               item.isFolder
-                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">${item.itemCount || 0} 个文件</span>`
+                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0">${item.itemCount || 0} 个文件</span>`
                 : ""
             }
           </td>
