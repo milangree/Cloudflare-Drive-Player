@@ -2018,9 +2018,15 @@ function renderPlayerMedia(item, streamUrl) {
     dom.mediaWrapper.appendChild(artContainer);
 
     // 初始化 Artplayer
+    const videoExt = (item.name.split(".").pop() || "").toLowerCase();
+    const isHls = videoExt === "m3u8";
+    const isFlv = videoExt === "flv";
+    const detectedType = isHls ? "m3u8" : isFlv ? "flv" : (videoExt || "mp4");
+
     state.playerInstance = new Artplayer({
       container: artContainer,
       url: streamUrl,
+      type: detectedType,
       title: item.name,
       poster: "",
       volume: 0.8,
@@ -2037,7 +2043,7 @@ function renderPlayerMedia(item, streamUrl) {
       playbackRate: true,
       aspectRatio: true,
       fullscreen: true,
-      fullscreenWeb: false,
+      fullscreenWeb: true,
       subtitleOffset: true,
       miniProgressBar: true,
       playsInline: true,
@@ -2047,18 +2053,27 @@ function renderPlayerMedia(item, streamUrl) {
       moreVideoAttr: {
         crossOrigin: "anonymous",
       },
-      playbackRate: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       customType: {
-        m3u8: function (video, url) {
+        m3u8: function (video, url, art) {
           if (window.Hls && Hls.isSupported()) {
-            const hls = new Hls();
+            const hls = new Hls({
+              enableWorker: true,
+              lowLatencyMode: true,
+            });
             hls.loadSource(url);
             hls.attachMedia(video);
+            art.on("destroy", () => {
+              try {
+                hls.destroy();
+              } catch (_) {}
+            });
           } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
             video.src = url;
+          } else {
+            art.notice.show = "当前浏览器不支持播放 M3U8 流媒体";
           }
         },
-        flv: function (video, url) {
+        flv: function (video, url, art) {
           if (window.flvjs && flvjs.isSupported()) {
             const flvPlayer = flvjs.createPlayer({
               type: "flv",
@@ -2066,6 +2081,11 @@ function renderPlayerMedia(item, streamUrl) {
             });
             flvPlayer.attachMediaElement(video);
             flvPlayer.load();
+            art.on("destroy", () => {
+              try {
+                flvPlayer.destroy();
+              } catch (_) {}
+            });
           } else {
             video.src = url;
           }
