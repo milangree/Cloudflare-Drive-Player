@@ -44,24 +44,32 @@ graph TD
 ```
 
 ### 阶段 1：质量与安全门禁 (Code Quality & Security Audit)
-- **代码静态与语法校验** (`npm run test:syntax` -> `node scripts/ci-check.js`)：
-  - 递归扫描 `functions/` 与 `public/js/` 下所有 JavaScript 文件，使用 `node --check` 进行原生 AST 解析，确保无语法与语法树损坏。
-  - 检查静态文件依赖完整性（必须存在 `index.html`、`style.css`、`app.js`、`favicon.svg`、`_routes.json`、`_headers`）。
-  - 校验 `wrangler.toml` 配置文件有效性。
-- **依赖安全漏洞审计** (`npm audit --audit-level=high`)：
-  - 检测生产与开发依赖漏洞，保障供应链安全。
+- **代码静态与契约门禁校验** (`npm run test:syntax` -> `node scripts/ci-check.js`)：
+  - **步骤 1/7**：递归扫描 `functions/` 与 `public/js/` 下所有 JavaScript 文件，使用 `node --check` 进行原生 AST 解析，确保无语法损坏。
+  - **步骤 2/7**：检查静态文件依赖完整性（`index.html`、`style.css`、`app.js`、`favicon.svg`、`_routes.json`、`_headers`）及 `_routes.json` 边缘路由隔离规则。
+  - **步骤 3/7**：校验 `wrangler.toml` 配置文件有效性与输出目录配置。
+  - **步骤 4/7**：校验流媒体 API 契约（MKV `video/x-matroska` MIME 规范化、`Accept-Ranges: bytes` 与 `Content-Range` HTTP 206 分片透传）。
+  - **步骤 5/7**：【用户需求 2 门禁】Google 预览零遮挡安全沙箱模型与防弹窗门禁（反退化阻断：严禁右上角遮挡层；沙箱严格阻断 `allow-popups` 与 `allow-top-navigation`）。
+  - **步骤 6/7**：【用户需求 1 门禁】客户端双阶自适应降级播放与智能选源契约（先验探测 + 动态看门狗 + 自动切换云端转码预览）。
+  - **步骤 7/7**：【用户需求 3 门禁】播放器视窗极简 Header 结构（核心 4 项控件：文件名/本地播放/最大化/关闭；移除冗余堆砌控件）及 CSP 安全响应头（放行 `drive.google.com` 且 `nosniff`）。
+- **依赖安全漏洞审计** (`npm audit --omit=dev --audit-level=high`)：
+  - 阻断生产运行时高危漏洞，同时进行开发工具链依赖预警，保障供应链安全。
 
 ### 阶段 2：Cloudflare Pages 部署与冒烟测试 (Deploy to Cloudflare Pages)
 - **Wrangler Pages 发布** (`cloudflare/wrangler-action@v3`)：
   - 上传 `public` 静态资源目录并编译打包 `functions` 边缘 Worker。
   - 分支规则：`main` 分支发布至生产环境 (`--branch=main`)，其他分支发布为独立预览环境（Preview URL）。
 - **边缘预热与自适应冒烟测试** (`node scripts/healthcheck.js`)：
-  - 具备 5 秒基础边缘广播缓冲 + `waitForEdgeReadiness` 预热轮询。
-  - 对 4 个核心端点执行指数退避重试探测（1.5s -> 2.25s -> 3.37s）：
+  - 具备 15 秒全球 Anycast 边缘广播缓冲 + `waitForEdgeReadiness` 预热轮询。
+  - 对 8 个核心端点与标头规范执行指数退避重试探测（1.5s -> 2.25s -> 3.37s）：
     1. `GET /`：首页 HTML 渲染与 Content-Type (`text/html`) 验证。
-    2. `GET /css/style.css`：样式表静态 CDN 直通与 Content-Type (`text/css`) 验证。
-    3. `GET /api/info`：Functions 边缘计算与配置接口 JSON 响应。
-    4. `OPTIONS /api/stream/test-probe`：媒体流 CORS 跨域预检与允许标头。
+    2. `GET /`：边缘安全响应头规范 (`X-Content-Type-Options: nosniff`)。
+    3. `GET /`：CSP 安全策略合规性 (`Content-Security-Policy` 包含 `drive.google.com`)。
+    4. `GET /css/style.css`：样式表静态 CDN 直通与 Content-Type (`text/css`) 验证。
+    5. `GET /js/app.js`：核心交互脚本加载与 Content-Type (`application/javascript`)。
+    6. `GET /api/info`：Functions 边缘计算与配置接口 JSON 响应。
+    7. `GET /api/list`：目录文件树索引 API 与 items 契约。
+    8. `OPTIONS /api/stream/test-probe`：媒体流 CORS 跨域预检与标头暴露。
 
 ---
 

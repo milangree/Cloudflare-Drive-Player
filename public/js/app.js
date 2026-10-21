@@ -1683,7 +1683,7 @@ function startMediaWatchdog(item, art) {
     const isStalledOrBlack = isErrored || isAudioOnlyOrBlack || (isFinalCheck && isStalled);
 
     if (isStalledOrBlack) {
-      console.warn("Watchdog 探测到视频解码卡死或黑屏/仅音频状态:", {
+      console.warn("Watchdog 探测到视频解码卡死或黑屏/仅音频状态，自动无感切换至云端转码预览:", {
         name: item.name,
         currentTime: video.currentTime,
         videoWidth: video.videoWidth,
@@ -1692,13 +1692,17 @@ function startMediaWatchdog(item, art) {
         isStalled,
       });
 
-      const alertMsg = isMkv
-        ? "检测到浏览器无法解码此 MKV 画面（黑屏/只有声音或容器不支持）。已为您准备好云端转码，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
-        : "当前视频画面解码失败（黑屏/仅音频）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
-      showCodecWarning(alertMsg, true);
-      if (art.notice) {
-        art.notice.show = "画面解码受阻（黑屏/无画面），建议点击顶部一键切换云端转码";
+      if (blackScreenWatchdog) {
+        clearTimeout(blackScreenWatchdog);
+        blackScreenWatchdog = null;
       }
+      if (blackScreenQuickTimer) {
+        clearTimeout(blackScreenQuickTimer);
+        blackScreenQuickTimer = null;
+      }
+
+      showToast("检测到浏览器画面解码受阻（黑屏/无画面），已自动为您切换为云端转码预览...", 3500);
+      renderGooglePreview(item);
       return true;
     }
     return false;
@@ -2124,10 +2128,17 @@ function openMediaPlayer(item) {
   dom.playerModal.classList.remove("hidden");
   dom.playerModal.classList.add("flex");
 
-  // 智能起播策略：所有音视频一律默认使用应用内置播放器
+  // 智能起播策略与自动选源：
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
-    renderPlayerMedia(item, streamUrl);
+    // 自动检测用户浏览器解码能力；若已知当前环境不支持该编码/容器（如 Safari 下 MKV、缺少 HEVC 硬解等）
+    if (!canBrowserPlayNatively(item)) {
+      console.info("浏览器环境不支持此视频编码或容器，自动切换至云端转码预览播放:", item.name);
+      showToast("检测到当前浏览器无法原生硬解此格式，已自动为您启用云端转码预览", 3500);
+      renderGooglePreview(item);
+    } else {
+      renderPlayerMedia(item, streamUrl);
+    }
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
     hideCodecWarning();
@@ -2142,19 +2153,28 @@ function openMediaPlayer(item) {
   }
 }
 
-// 渲染 Google 官方转码预览（严格受限沙箱与精准防护，彻底杜绝弹窗与重定向）
+// 渲染 Google 官方转码预览（严格受限沙箱与零遮挡视口，彻底杜绝弹窗与重定向）
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
   hideCodecWarning();
+  const isPortrait = isPortraitMedia(item);
 
-  // 标准化 Google Drive 官方预览 URL
-  const previewUrl = `https://drive.google.com/file/d/${item.id}/preview`;
+  // 解析目标分辨率，强制指定 Google 预览播放最高画质
+  const resBadge = getVideoResolution(item);
+  let vqParam = "highres";
+  if (resBadge === "4K") vqParam = "hd2160";
+  else if (resBadge === "2K") vqParam = "hd1440";
+  else if (resBadge === "1080P") vqParam = "hd1080";
+  else if (resBadge === "720P") vqParam = "hd720";
 
-  // 严格受限沙箱隔离：
-  // 1. 保留 allow-same-origin：允许 Google 预览播放器正常读取 LocalStorage/SessionStorage 状态与媒体上下文；
-  // 2. 严禁 allow-popups 与 allow-popups-to-escape-sandbox：从浏览器底层物理拦截 window.open 与 target="_blank"；
-  // 3. 右上角精准安全防护罩（宽 112px，高 56px）：精准拦截 Google 右上角 Pop-out 弹窗按钮，绝不遮挡顶部中央片名与播放器控件
+  const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
+
+  // 严格沙箱隔离与零遮挡纯净视口：
+  // 1. 彻底移除任何覆盖在视频画面右上角或顶部的透明/半透明遮罩卡片或防护 div，确保画面 100% 纯净无遮挡；
+  // 2. 移除 allow-popups 与 allow-popups-to-escape-sandbox，根据 W3C HTML5 沙箱规范，浏览器底层天然静默阻断任何 window.open 与 target="_blank" 弹出新窗口；
+  // 3. 同时不授予 allow-top-navigation，彻底杜绝宿主页面被重定向的风险；
+  // 4. 追加 csp="sandbox allow-scripts allow-forms allow-presentation;" 实施双层策略加固。
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
@@ -2163,18 +2183,10 @@ function renderGooglePreview(item) {
         class="border-0 w-full h-full" 
         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        sandbox="allow-scripts allow-forms allow-presentation"
+        csp="sandbox allow-scripts allow-forms allow-presentation;"
         loading="eager"
       ></iframe>
-      <!-- 右上角精准透明防护罩：仅拦截右上方 Pop-out 新窗口图标，绝不遮挡中间控制与起播交互 -->
-      <div 
-        class="absolute top-0 right-0 w-28 h-14 z-20 cursor-default select-none pointer-events-auto" 
-        style="background: transparent;"
-        onclick="event.stopPropagation(); event.preventDefault();"
-        onmousedown="event.stopPropagation(); event.preventDefault();"
-        onmouseup="event.stopPropagation(); event.preventDefault();"
-        title="已开启安全受限防护"
-      ></div>
     </div>
   `;
   updateStreamSourceUI();
@@ -2273,17 +2285,12 @@ function renderPlayerMedia(item, streamUrl) {
           }
         },
         mkv: function (video, url, art) {
-          // MKV 容器定制挂载：支持环境直接原生解封装起播，并挂载解码失败降级监听
+          // MKV 容器定制挂载：支持环境直接原生解封装起播，并挂载解码失败自动降级监听
           video.src = url;
           const onMkvError = () => {
-            console.warn("MKV 原生底层解码失败，触发云端转码引导");
-            showCodecWarning(
-              "当前浏览器无法解码此 MKV 画面（容器或编码受限）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！",
-              true
-            );
-            if (art.notice) {
-              art.notice.show = "MKV 原生解码受阻，请点击顶部一键切换云端转码";
-            }
+            console.warn("MKV 原生底层解码失败，自动切换至云端转码预览播放");
+            showToast("当前浏览器无法解码此 MKV，已自动无感切换为云端转码预览...", 3500);
+            renderGooglePreview(item);
           };
           video.addEventListener("error", onMkvError, { once: true });
           art.on("destroy", () => {
@@ -2358,20 +2365,11 @@ function renderPlayerMedia(item, streamUrl) {
       }
     });
 
-    // 播放异常提示与降级
+    // 播放异常自动智能降级
     state.playerInstance.on("error", (error) => {
-      console.warn("Artplayer 遇到播放错误:", error);
-      const isMkvVideo = videoExt === "mkv";
-      const errorMsg = isMkvVideo
-        ? "浏览器无法解码此 MKV 视频画面/音频（黑屏或容器不支持）。已为您准备好云端转码方案，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
-        : "当前视频编码在浏览器内核中解码失败（黑屏）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
-      showCodecWarning(errorMsg, true);
-      if (state.playerInstance && state.playerInstance.notice) {
-        state.playerInstance.notice.show = isMkvVideo
-          ? "MKV 画面或音频解码受阻（黑屏），请点击顶部一键切换转码"
-          : "当前视频解码受阻（黑屏），请点击顶部一键切换转码";
-      }
-      showToast("内置内核解码受限，建议切换云端转码或外部播放器");
+      console.warn("Artplayer 遇到播放错误，自动切换至云端转码预览播放:", error);
+      showToast("检测到浏览器无法正常解码播放，已自动为您无感切换为云端转码预览...", 3500);
+      renderGooglePreview(item);
     });
 
     // 自动挂载同名外挂字幕 (OpenList 影音体验)
@@ -2423,7 +2421,7 @@ function toggleStreamSource() {
   const item = state.activeMediaItem;
   if (!item || !item.isVideo) return;
 
-  const streamUrl = `${window.location.origin}/api/stream/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
   const resBadge = getVideoResolution(item);
   const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
 
@@ -2431,7 +2429,7 @@ function toggleStreamSource() {
     showToast(is4K ? "正在切换至 4K 原画直链播放..." : "正在切换至内置原画播放...");
     renderPlayerMedia(item, streamUrl);
   } else {
-    showToast("正在切换至 Google 云端转码预览...");
+    showToast("正在切换至 Google 云端转码预览 (受限安全模式)...");
     renderGooglePreview(item);
   }
 }

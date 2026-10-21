@@ -2,3 +2,4 @@
   Access-Control-Allow-Origin: *
   Access-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length, Content-Disposition
   X-Content-Type-Options: nosniff
+  Content-Security-Policy: frame-src 'self' https://drive.google.com; frame-ancestors 'self';

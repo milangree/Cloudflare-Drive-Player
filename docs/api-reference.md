@@ -179,6 +179,15 @@
   Cache-Control: public, max-age=14400, stale-while-revalidate=86400
   ```
 
+#### 附：客户端智能降级与 Google 云端预览集成契约
+
+当浏览器宿主环境无法原生解码媒体流时（如 Safari 下播放 MKV、缺少 HEVC/H.265 硬解、商用 DTS/AC-3 音频或起播黑屏），前端状态机自动无感降级调用 Google 官方转码预览通道：
+- **预览端点**：`https://drive.google.com/file/d/{id}/preview`
+- **控制参数**：
+  - `autoplay=1`：自动起播
+  - `vq=highres`（或 `hd2160`/`hd1080`/`hd720`）：画质参数对齐源文件元数据
+- **安全沙箱隔离**：嵌入时使用 W3C HTML5 iframe 沙箱属性：`sandbox="allow-scripts allow-forms allow-presentation"`，严禁声明 `allow-popups`，天然阻断弹窗并彻底废除物理遮挡层。详细规范见 [ADR-0002](adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md)。
+
 ---
 
 ### 4. 文件原生下载 (`GET /api/download/:id`)

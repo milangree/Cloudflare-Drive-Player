@@ -5,6 +5,7 @@
 ![Cloudflare Pages](https://img.shields.io/badge/Platform-Cloudflare%20Pages-f38020?logo=cloudflare)
 ![Google Drive](https://img.shields.io/badge/Storage-Google%20Drive-4285F4?logo=googledrive)
 ![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(Pure%20Web%20Crypto)-emerald)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 ---
 
@@ -12,7 +13,15 @@
 
 - 🚀 **极简部署 & 零 npm 臃肿依赖**：基于原生 Web 标准与 Cloudflare Pages Functions，免去冗长的 node_modules 打包流程，秒级上传部署。
 - 🎬 **原生 HTTP Range 流式分片代理**：针对 Google Drive 视频播放卡顿与无法快进的通病，后端深度实现了 `Range: bytes=` 请求与 `206 Partial Content` 状态穿透，支持在浏览器中秒开视频、任意拖拽进度条。
-- 🎬 **现代化全能影音内核**：深度集成 **Artplayer** 与 Hls.js / Flv.js，支持视频/音频播放、0.5x~2.0x 倍速记忆、画中画 (PiP)、全屏/网页全屏、同名外挂字幕自动加载与时间轴微调、断点记忆续播及同名剧集自动连播。
+- ⚡ **双阶段智能解码降级引擎 (Smart Adaptive Fallback)**：
+  - **阶段一（静态先验探测）**：自动检测浏览器解码能力与硬件硬解环境；当检测到不支持的容器/编码（如 Safari 下 MKV、缺少 HEVC/H.265 硬解、DTS/AC-3 商用音频）时，**系统自动无感切换至云端转码通道**，无需用户反复手动排查。
+  - **阶段二（动态双阶看门狗）**：2.0s 快速黑屏侦测与 4.0s 深度稳定性巡检；一旦发生解码卡死、只有声音没有画面或 `video.error`，自动平滑切源至 Google 转码预览。
+- 🛡️ **100% 纯净零遮挡 W3C 原生安全沙箱**：
+  - **彻底废除物理遮挡层**：完全移除覆在视频画面右上角的透明遮罩卡片，彻底告别鼠标光标突变与视觉伪影，呈现 100% 通透院线级画质。
+  - **浏览器内核级弹窗阻断**：基于 W3C HTML5 沙箱规范严格移除 `allow-popups` 与 `allow-popups-to-escape-sandbox`，配合严格 CSP 策略，在浏览器底层天然静默拦截任何新窗口与跳转，安全与观感兼得。
+- 🖥️ **极简 4 合 1 纯净控制台**：
+  - 顶栏 Header 极致精简，严格聚焦核心四要素：**① 文件名 (自适应截断/Tooltip/一键全选)**、**② 调用本地播放器 (MPV / PotPlayer / IINA / VLC / Infuse / ExoPlayer / 快捷直链 / 终端命令)**、**③ 最大化 / 还原窗口**、**④ 关闭按钮**。
+  - 其余元素优雅收敛，紧随其后是开阔沉浸的原生全功能播放视窗。
 - 🔐 **完备的后台管理系统 (Admin Dashboard)**：
   - **访客安全访问控制**：支持后台一键开关「打开网站需要输入密码」，并随时更改访客访问密码；未解锁用户无法列出和播放任何文件。
   - **动态 SITE_NAME 调整**：直接在后台控制台重命名网站名称，立即生效，无需再去 Cloudflare 改环境变量重部署。
@@ -34,33 +43,37 @@ cf-pages-drive-player/
 ├── .github/
 │   └── workflows/
 │       └── ci-cd.yml          # GitHub Actions 自动化 CI/CD 流水线 (双阶段质量与部署门禁)
-├── docs/                      # 架构与开发者工程文档
+├── docs/                      # 架构决策与开发者工程文档
+│   ├── adr/
+│   │   ├── ADR-001-cf-pages-edge-routing-and-ci-resilience.md # 边缘路由隔离与 CI 韧性决策
+│   │   ├── 0001-media-streaming-and-transcoding-architecture.md # 流媒体分片透传架构
+│   │   └── 0002-adaptive-playback-sandboxing-and-minimalist-player.md # 智能降级、零遮挡沙箱与极简视窗 ADR
 │   ├── api-reference.md       # 全量 API 接口参考文档与可执行示例
 │   ├── ci-cd-deployment-guide.md # CI/CD 流水线与部署运维排障手册
-│   └── adr/                   # 架构决策记录 (ADR-001 边缘路由隔离与重试策略)
+│   └── player-architecture-and-user-guide.md # 播放器交互架构、自适应降级状态机与零遮挡视窗使用手册
 ├── functions/                 # Cloudflare Pages Functions (Serverless API 边缘层)
 │   ├── api/
 │   │   ├── _middleware.js     # API 统一中间件 (CORS 跨域与全局异常保护，仅对 /api/* 生效)
 │   │   ├── info.js            # 网站信息与凭证配置检测
 │   │   ├── list.js            # 获取目录文件列表 (支持分页与模糊搜索)
-│   │   ├── stream/[id].js     # 媒体流代理核心 (HTTP 206 Range 分片透传)
+│   │   ├── stream/[id].js     # 媒体流代理核心 (HTTP 206 Range 分片透传与 MKV MIME 校准)
 │   │   ├── download/[id].js   # 文件直接下载 (RFC 5987 编码文件名)
 │   │   └── admin/             # 后台管理及云盘文件全生命周期管控 API
 │   │       ├── auth.js        # 访问密码与管理员身份认证
 │   │       ├── config.js      # 站点配置读取与动态持久化更新
-│   │       └── files.js       # 在线重命名/移动/删除/新建/断点续传通道
+│   │       └── files.js       # 在线重命名/移动/删除/新建/公开权限配置通道
 │   └── utils/
-│       ├── configManager.js   # 配置管理器 (KV / Drive Properties 双模自动降级)
+│       ├── configManager.js   # 配置管理器 (KV / Drive Properties 双模自动降级，恒定时间签名比较)
 │       └── googleAuth.js      # 基于 Web Crypto API 的 RS256 JWT 自动生成与 Token 缓存
 ├── public/                    # 纯静态前端资源 (100% 走 Cloudflare 边缘 CDN 直通，零开销)
-│   ├── index.html             # 现代化单页应用 (Tailwind + Lucide + Artplayer)
+│   ├── index.html             # 现代化单页应用 (极简 4 合 1 Header 与沉浸式播放器视窗)
 │   ├── css/style.css          # 自定义滚动条与毛玻璃视觉增强
-│   ├── js/app.js              # 核心交互逻辑 (路由/播放/搜索/状态管理)
+│   ├── js/app.js              # 核心交互逻辑 (智能降级状态机、双阶看门狗、外部播放器调用)
 │   ├── favicon.svg            # 站点矢量图标
-│   ├── _headers               # 静态资源全局 HTTP 响应头配置
+│   ├── _headers               # 静态资源全局 HTTP 响应头配置 (含 frame-ancestors 与 CSP 沙箱)
 │   └── _routes.json           # 边缘路由隔离规则 (显式指定仅 /api/* 进入 Functions 计算)
 ├── scripts/                   # 自动化运维与质量闸门脚本
-│   ├── ci-check.js            # 流水线阶段 1: JavaScript AST 语法与静态资源完整性验证
+│   ├── ci-check.js            # 流水线阶段 1: JavaScript AST 语法、静态资源完整性与契约验证
 │   └── healthcheck.js         # 流水线阶段 2: 具备 Anycast 边缘预热与指数退避的冒烟测试脚本
 ├── wrangler.toml              # Wrangler 配置文件
 └── .env.example               # 环境变量配置模板
@@ -71,6 +84,8 @@ cf-pages-drive-player/
 ## 📚 开发者与运维文档指南
 
 - 📖 **[完整 API 接口参考文档 (API Reference)](docs/api-reference.md)**：包含全量端点参数、状态码说明、认证流程与可直接复制执行的 `curl` 示例。
+- 🎬 **[播放器交互架构与自适应降级手册 (Player Architecture & User Guide)](docs/player-architecture-and-user-guide.md)**：详解双阶段自适应降级探测引擎、零遮挡 W3C 安全沙箱、本地播放器协议规范与测试指南。
+- 🏛️ **[架构决策记录 (ADR-0002)](docs/adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md)**：主导制定的自适应降级状态机、零遮挡安全沙箱模型与极简流媒体视窗架构决策。
 - 🚀 **[CI/CD 流水线与部署运维指南 (Deployment & Troubleshooting)](docs/ci-cd-deployment-guide.md)**：详解 GitHub Actions 双阶段门禁、边缘 Anycast 预热机制与生产故障排查手册。
 - 🏛️ **[架构决策记录 (ADR-001)](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md)**：关于边缘路由隔离、避免静态资源 500 异常与冒烟测试重试策略的架构决策背景。
 
@@ -166,55 +181,94 @@ npm run deploy
 >      ```
 >      提交并推送到 GitHub，Cloudflare Pages 会自动触发构建并完成 KV 挂载！登录后台管理窗口将看到绿色的 `KV: ACTIVE` 状态标记。
 
-> 💡 **跨盘与多盘使用技巧（方案 A）**：
+> 💡 **跨盘与多盘使用技巧**：
 > 1. 在 Google Drive 建一个总目录（例如 `我的影音库`），将其 ID 填入 `ROOT_FOLDER_ID`。
 > 2. **如何挂载其他盘/团队盘/不同账号的文件夹？**
 >    - 在 Google Drive 网页里找到目标文件夹，右键选择 **「整理 (Organize)」->「添加快捷方式 (Add shortcut)」**，直接添加进你的总目录中。
 >    - 本项目底层已深度适配 Google Drive 快捷方式穿透解析，点击快捷方式即可像本地文件夹一样原生穿透访问其他盘！
 >    - 增删改盘全部在 Google Drive 网页完成，**彻底告别在 Cloudflare 环境变量中维护长加密串！**
 
-> 💡 **提示**：添加完环境变量或 KV 绑定后，在 Pages 的 **Deployments (部署)** 页面中点击最新一次部署右侧的 `Retry deployment (重新部署)` 即可生效！
+---
+
+## 📺 播放器交互、自适应降级与调用矩阵
+
+### 1. 播放器顶部视窗极简架构 (Header 4-Core Layout)
+
+播放器顶部遵循极简沉浸美学，仅呈现 4 项核心交互，彻底消除界面杂音：
+
+```text
++----------------------------------------------------------------------------------------------------+
+| [🎞️ 文件名.mkv] (自适应截断/Tooltip/全选)     [▶️ 调用本地播放器 ▾]  [🔲 最大化/还原]  [✕ 关闭 (Esc)] |
++----------------------------------------------------------------------------------------------------+
+|                                                                                                    |
+|                                       沉浸式视频播放视窗                                              |
+|                           (原生 Artplayer 流畅起播 或 Google 转码预览)                              |
+|                                                                                                    |
++----------------------------------------------------------------------------------------------------+
+```
+
+1. **文件名呈现器 (`#player-file-name`)**：
+   - 自动响应式弹性宽度，支持超长文件名截断 (`truncate`)；
+   - 鼠标悬停呈现完整文件名 Tooltip，支持点击或双击**一键全选 (`select-all`)**，方便复制片名搜索刮削。
+2. **调用本地播放器菜单 (`#ext-player-dropdown-container`)**：
+   - 集成 6 大主流硬解播放器协议与直链通道（见下文调用协议）。
+3. **窗口最大化 / 还原 (`#player-maximize-btn`)**：
+   - 点击或双击顶栏实现居中模态视窗与网页全屏无缝切换，播放状态丝滑保持不中断。
+4. **关闭按钮 (`#close-player-btn`)**：
+   - 退出视窗，自动销毁解码实例与后台看门狗定时器，释放内存。
+
+### 2. 双阶段智能自适应降级引擎
+
+无需用户手动排查或多次点击切换，播放管道自动完成环境适配：
+
+| 探测阶段 | 触发时机 | 探测条件 | 自动化动作 | 体验效果 |
+| :--- | :--- | :--- | :--- | :--- |
+| **阶段一：静态先验探测** | 打开媒体前 | ① 格式为 `.avi/.wmv/.rmvb/.iso`<br>② Safari 环境下的 `.mkv`<br>③ 包含 DTS/AC-3/TrueHD 等非免费商用音轨<br>④ 浏览器缺少 HEVC/H.265 硬解能力 | **直接调用 Google 云端转码预览通道**起播 (`renderGooglePreview`) | **零等待、零黑屏**，秒开转码画面 |
+| **阶段二：动态双阶看门狗** | 原生起播中 | ① **快速巡检 (2.0s)**：`currentTime > 0.3` 但 `hasVideo === false`（经典黑屏有声音），或 `video.error`<br>② **深度巡检 (4.0s)**：未暂停且未缓冲成功 (`readyState < 2`) | **自动销毁原生播放器，平滑重连至 Google 云端转码预览** | 自动完成救场，告别“黑屏卡死”困扰 |
+
+### 3. 零遮挡 W3C 原生安全沙箱对比
+
+针对 Google Drive 官方预览右上角弹窗问题，彻底废除旧式遮罩层：
+
+| 机制维度 | 旧式透明遮罩卡片（已彻底废除） | 当前 W3C 原生沙箱模型（现行标准） |
+| :--- | :--- | :--- |
+| **视觉呈现** | 画面右上角常驻 `w-28 h-14` 透明悬浮框，产生图层伪影 | **100% 纯净通透**，没有任何遮罩层或悬浮 div 遮挡 |
+| **鼠标与触控** | 悬停至右上角时光标突变、点击被物理阻断影响控制条交互 | **全域触控透明自然**，原生鼠标悬浮与全屏手势完美畅通 |
+| **弹窗阻断能力** | 仅依赖物理拦截，穿透或代码执行易被绕过 | **W3C 规范级天然静默阻断**：严格去除 `allow-popups`，底层拒绝创建新窗口 |
+| **防重定向加固** | 无 CSP 加固，存在宿主被跳出的风险 | 双层防护：不授予 `allow-top-navigation` + CSP `frame-ancestors 'self'` |
+
+### 4. 外部硬件解码播放器调用协议白皮书
+
+点击顶部「调用本地播放器」下拉菜单，即可一键将 Range 分片直链派发至系统本地播放器，尊享完整 HDR、杜比视界与 ASS 特效字幕：
+
+| 播放器 | 支持平台 | 调起协议 / URL Scheme 格式 | 优势场景 |
+| :--- | :--- | :--- | :--- |
+| **MPV** | 全平台 (Windows / macOS / Linux) | `mpv://<ENCODED_STREAM_URL>` | 最强开源跨平台渲染器，色彩还原与 ASS 字幕极佳 |
+| **PotPlayer** | Windows | `potplayer://<ENCODED_STREAM_URL>` | Windows 端极致硬件加速与滤镜扩展 |
+| **IINA** | macOS | `iina://weblink?url=<ENCODED_STREAM_URL>` | Mac 专属现代播放器，深度适配 Touch Bar 与原生手势 |
+| **VLC** | 全平台 / 移动端 | `vlc://<ENCODED_STREAM_URL>` | 老牌工业级全能解码器，兼容所有冷门编码 |
+| **Infuse** | Apple 生态 (iOS / iPadOS / macOS / Apple TV) | `infuse://x-callback-url/play?url=<ENCODED_STREAM_URL>` | 奢华海报墙与家庭影院音频直通 |
+| **ExoPlayer** | Android | `intent:<STREAM_URL>#Intent;type=video/*;end` | 调用手机自带底层媒体播放内核 (支持 Next Player / Just Player) |
+| **MPV 终端命令** | 开发者 / 极客 | 点击一键复制命令：`mpv "<STREAM_URL>"` | 终端直接贴入执行，附带完整日志诊断 |
 
 ---
 
-## 📺 全格式播放支持与兼容性说明 (MKV / HEVC / 特殊音轨)
+## 💻 本地调试与质量验证
 
-### 1. 浏览器原生支持与技术原理
-网页端媒体播放直接受宿主浏览器及底层系统的原生解封装和解码限制：
-- **MP4 / WebM (H.264 + AAC / VP9 + Opus)**：全平台浏览器原生秒开，完美支持 HTTP 206 范围分片拖拽。
-- **MKV (Matroska) 容器**：
-  - **Safari (macOS / iOS)**：底层基于 AVFoundation，苹果不支持 Matroska 容器，网页播放将触发解码告警；
-  - **Chrome / Edge / Firefox**：可直连部分标准编码，但如果音轨采用 **AC-3 (杜比) / DTS** 等商业授权编码，受专利授权限制将导致静音或画面卡死在第 0 帧（黑屏）。
+如果你想在本地开发、调试或跑质量闸门：
 
-### 2. 完备的无缝降级与外部秒播方案
-当系统检测到浏览器原生解码受限时，播放器界面会自动弹出提示条，并提供以下多级解决方案：
-- **🌐 Google 官方转码通道**：点击警告栏右侧 **「一键切换云端转码」** 或顶栏 **「⚡ 原画直出 / 转码预览」** 按钮，直接无缝切换至 Google Drive 官方转码预览切片。
-  - *前置权限说明*：Google 官方转码预览是由浏览器前端直接加载 Google 网页服务（不同于后端通过 Service Account 读取二进制流）。如需匿名访客顺畅使用转码预览，请在 Google Drive 中将对应文件夹设置为 **「知道链接的任何人都可以查看」**；若为私有文件，访客浏览器需登录有权访问该云盘的 Google 账号。
-- **⚡ MPV 播放器 (跨平台)**：点击直接通过 `mpv://` 协议秒开；提供 **「复制 MPV 终端命令」** 按钮，命令行粘贴 `mpv "直链"` 运行，尊享全特效 ASS 字幕与完整硬件加速。
-- **💻 Windows PotPlayer**：点击一键调起本地 PotPlayer 极速硬件加速。
-- **🍎 macOS IINA**：点击一键调起基于 MPV 核心的 IINA 播放器。
-- **📱 Android ExoPlayer (原生 Intent)**：通过系统级 `intent:` 调用底层播放内核（如 Just Player、Next Player、VLC 等）。
-- **📺 Apple TV / iOS Infuse**：点击一键直达 Infuse。
+```bash
+# 1. 复制配置模板
+cp .env.example .dev.vars
 
-### 3. 统一视口与多比例自适应规范
-播放器视口采用无损等比自适应架构（`object-fit: contain`），在切换 16:9（常规剧集）、4:3（怀旧番剧）、21:9（宽银幕电影）或 9:16（手机竖屏）片源时，窗口尺寸保持几何稳定，上下/左右自适应纯黑底色，杜绝界面剧烈晃动与画面变形拉伸。
+# 2. 执行静态质量检查 (包含 AST 语法、路由与沙箱合规校验)
+npm run test:syntax
+# 或直接运行：
+node scripts/ci-check.js
 
----
-
-## 💻 本地调试运行
-
-如果你想在本地开发或预览：
-
-1. 复制配置模板：
-   ```bash
-   cp .env.example .dev.vars
-   ```
-2. 编辑 `.dev.vars`，将你的 `SERVICE_ACCOUNT_JSON` 与 `ROOT_FOLDER_ID` 填入。
-3. 启动本地模拟服务：
-   ```bash
-   npm run dev
-   ```
-4. 浏览器访问终端输出的地址（通常为 `http://localhost:8788`）。
+# 3. 启动本地开发服务 (支持 Pages Functions 本地热重载)
+npm run dev
+```
 
 ---
 
@@ -241,4 +295,4 @@ npm run deploy
 
 ## 📄 开源许可证
 
-MIT License.
+MIT License © 2026 [Cloudflare Drive Player Team](https://github.com/milangree/cf-pages-drive-player)
