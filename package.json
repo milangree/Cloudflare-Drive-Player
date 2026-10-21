@@ -1,5 +1,5 @@
 {
-  "name": "cf-pages-drive-player",
+  "name": "Cloudflare-Drive-Player",
   "version": "1.0.0",
   "description": "基于 Cloudflare Pages & Google Service Account 的轻量级 Google Drive 目录索引与流媒体播放器",
   "type": "module",
