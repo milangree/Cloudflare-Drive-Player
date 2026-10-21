@@ -81,11 +81,11 @@ flowchart TD
 ```html
 <iframe 
   id="google-drive-iframe"
-  src="https://drive.google.com/file/d/{FILE_ID}/preview?autoplay=1&vq=highres" 
-  class="border-0 w-full h-full absolute inset-0"
+  src="https://drive.google.com/file/d/{FILE_ID}/preview" 
+  class="border-0 w-full h-full"
+  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-  sandbox="allow-scripts allow-forms allow-presentation"
-  csp="sandbox allow-scripts allow-forms allow-presentation;"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
   loading="eager"
 ></iframe>
 ```
@@ -227,27 +227,40 @@ node scripts/ci-check.js
 
 **预期输出验证**：
 ```text
-🚀 [CI-Check] 开始自动化环境与代码质量闸门检查...
+🚀 [CI-Check] 开始执行全栈工程交付 CI/CD 自动化质量闸门检查...
 
-🔍 [步骤 1/4] 执行 JavaScript 语法与 AST 解析校验...
-✅ 已完成 11 个 JavaScript 文件的语法验证，0 错误。
+🔍 [步骤 1/7] 执行 JavaScript 语法与 AST 原生解析校验...
+✅ 已通过 11 个 JavaScript 文件的 AST 语法完整性验证 (0 错误)。
 
-🔍 [步骤 2/4] 验证 public 静态资源完整性与路由配置...
-✅ 静态文件存在并有效: \public\index.html
-✅ 静态文件存在并有效: \public\css\style.css
-✅ 静态文件存在并有效: \public\js\app.js
-✅ 静态文件存在并有效: \public\favicon.svg
-✅ 静态文件存在并有效: \public\_routes.json
-✅ 静态文件存在并有效: \public\_headers
-✅ _routes.json 路由配置语法与结构有效。
+🔍 [步骤 2/7] 验证 public 静态资源完整性与 _routes.json 边缘路由隔离...
+✅ 静态文件有效: \public\index.html
+✅ 静态文件有效: \public\css\style.css
+✅ 静态文件有效: \public\js\app.js
+✅ 静态文件有效: \public\favicon.svg
+✅ 静态文件有效: \public\_routes.json
+✅ 静态文件有效: \public\_headers
+✅ _routes.json 边缘路由隔离规则符合标准 (静态资源直通 CDN，计算与静态物理隔离)。
 
-🔍 [步骤 3/4] 验证 wrangler.toml 配置文件...
-✅ wrangler.toml 配置文件正常存在。
+🔍 [步骤 3/7] 验证 wrangler.toml 部署配置合规性...
+✅ wrangler.toml 配置合规 (pages_build_output_dir = "public")。
 
-🔍 [步骤 4/4] 校验流媒体 API 路由契约与 MKV 标头支持...
-✅ 流媒体处理契约合规：MKV MIME 规范化、Range 分片与 CORS 标头校验全部通过。
+🔍 [步骤 4/7] 校验流媒体 API 路由契约与 MKV/MP4 Range 分片穿透支持...
+✅ 流媒体服务契约全部合规 (支持 MKV MIME 规范化、HTTP 206 Range 分片与 CORS 标头暴露)。
 
-🎉 [CI-Check] 全部静态检查均通过，符合生产部署标准！
+🔍 [步骤 5/7] 校验【需求 2】Google 预览零遮挡安全沙箱模型与防弹窗门禁...
+✅ 零遮挡反退化门禁通过：已彻底移除右上角及全域遮罩拦截层，视频视窗 100% 纯净无遮挡。
+✅ Google 预览原生沙箱合规：sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" (成功阻断 allow-popups 与 top-navigation)。
+
+🔍 [步骤 6/7] 校验【需求 1】客户端双阶自适应降级播放与智能选源契约...
+✅ 阶段一静态先验探测契约就绪：覆盖 MKV 容器、Safari/WebKit 兼容性与 HEVC/多声道音频。
+✅ 阶段二动态看门狗与智能自动降级契约就绪：起播黑屏/卡死自动无感切换至云端转码预览。
+
+🔍 [步骤 7/7] 校验【需求 3】极简播放器 Header 结构与边缘安全响应头...
+✅ 播放器顶部 Header 核心四项控件完整齐备 (文件名 / 本地播放器 / 最大化 / 关闭)。
+✅ 播放器顶部 Header 视觉精简验证通过：无多余静态徽章与堆叠按钮，界面极简纯净。
+✅ 边缘响应头安全合规：CSP 明确放行 drive.google.com，且配置严格 MIME 防嗅探与 CORS 标头。
+
+🎉 [CI-Check 质量闸门] 全部 7 个自动化阶段静态检查与安全门禁均 100% 通过！
 ```
 
 ### 5.2 浏览器端功能人工核验步骤 (Manual Verification Steps)
