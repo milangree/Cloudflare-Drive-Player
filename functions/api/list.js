@@ -163,16 +163,20 @@ export async function onRequestGet(context) {
       };
     });
 
-    // 4. 并行获取所有子文件夹包含的文件数量与大小
+    // 4. 分批并发获取子文件夹包含的文件数量与大小（并发上限 5，防止 Google API 速率超限 429）
     const folderItems = items.filter((i) => i.isFolder);
     if (folderItems.length > 0) {
-      await Promise.all(
-        folderItems.map(async (folder) => {
-          const stats = await getFolderStats(folder.id, token);
-          folder.itemCount = stats.count;
-          folder.size = stats.size;
-        })
-      );
+      const CONCURRENCY_LIMIT = 5;
+      for (let i = 0; i < folderItems.length; i += CONCURRENCY_LIMIT) {
+        const batch = folderItems.slice(i, i + CONCURRENCY_LIMIT);
+        await Promise.all(
+          batch.map(async (folder) => {
+            const stats = await getFolderStats(folder.id, token);
+            folder.itemCount = stats.count;
+            folder.size = stats.size;
+          })
+        );
+      }
     }
 
     return new Response(

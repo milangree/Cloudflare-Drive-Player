@@ -226,10 +226,23 @@ export async function verifyAccessToken(token, env) {
     
     // 校验签名（兼容带或不带 salt）
     const expectedSign = await hashToken(payloadB64 + config.accessPassword);
-    return sign === expectedSign;
+    return timingSafeEqual(sign, expectedSign);
   } catch (_) {
     return false;
   }
+}
+
+/**
+ * 恒定时间字符串比较，防止时序侧信道攻击 (Timing Attack)
+ */
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) {
+    out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return out === 0;
 }
 
 /**
@@ -248,7 +261,7 @@ export async function verifyAdminToken(token, env) {
     if (!payload.exp || Date.now() > payload.exp) return false;
 
     const expectedSign = await hashToken(payloadB64 + secret);
-    return sign === expectedSign;
+    return timingSafeEqual(sign, expectedSign);
   } catch (_) {
     return false;
   }

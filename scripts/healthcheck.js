@@ -120,6 +120,15 @@ async function runHealthCheck() {
       }
     },
     {
+      name: '边缘安全响应头规范 (GET /)',
+      path: '/',
+      expectedStatus: [200],
+      validate: (resp) => {
+        const nosniff = resp.headers.get('x-content-type-options');
+        return nosniff === 'nosniff';
+      }
+    },
+    {
       name: '样式表完整性 (GET /css/style.css)',
       path: '/css/style.css',
       expectedStatus: [200],
@@ -138,7 +147,16 @@ async function runHealthCheck() {
       }
     },
     {
-      name: '媒体流 CORS 预检 (OPTIONS /api/stream/test-probe)',
+      name: '目录文件列表接口与契约 (GET /api/list)',
+      path: '/api/list',
+      expectedStatus: [200],
+      validate: async (resp) => {
+        const data = await resp.json();
+        return typeof data.success === 'boolean' && Array.isArray(data.items);
+      }
+    },
+    {
+      name: '媒体流 CORS 预检与标头暴露 (OPTIONS /api/stream/test-probe)',
       path: '/api/stream/test-probe',
       method: 'OPTIONS',
       expectedStatus: [204, 200],

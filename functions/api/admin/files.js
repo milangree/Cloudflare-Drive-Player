@@ -344,6 +344,38 @@ export async function onRequestPost(context) {
       );
     }
 
+    // 动作 7：确保文件/文件夹具有任何人只读共享权限（解决 Google Drive 官方预览 302 重定向到登录页的问题）
+    if (action === "ensure_public") {
+      const { fileId } = body;
+      const targetId = fileId || "root";
+      const permUrl = `https://www.googleapis.com/drive/v3/files/${targetId}/permissions?supportsAllDrives=true`;
+      const res = await fetch(permUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${googleToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "viewer",
+          type: "anyone",
+          allowFileDiscovery: false,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`设置 Google Drive 公开权限失败: ${errText}`);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "已成功为该资源配置「任何人可查看」权限，Google 官方云端转码与预览现已畅通！",
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(JSON.stringify({ success: false, error: "不支持的操作指令" }), { status: 400 });
   } catch (err) {
     return new Response(JSON.stringify({ success: false, error: err.message }), {

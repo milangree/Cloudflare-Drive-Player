@@ -2142,27 +2142,19 @@ function openMediaPlayer(item) {
   }
 }
 
-// 渲染 Google 官方转码预览（严格受限沙箱与全宽顶部防护，彻底杜绝弹窗与重定向）
+// 渲染 Google 官方转码预览（严格受限沙箱与精准防护，彻底杜绝弹窗与重定向）
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
   hideCodecWarning();
-  const isPortrait = isPortraitMedia(item);
 
-  // 解析目标分辨率，强制指定 Google 预览播放最高画质
-  const resBadge = getVideoResolution(item);
-  let vqParam = "highres";
-  if (resBadge === "4K") vqParam = "hd2160";
-  else if (resBadge === "2K") vqParam = "hd1440";
-  else if (resBadge === "1080P") vqParam = "hd1080";
-  else if (resBadge === "720P") vqParam = "hd720";
+  // 标准化 Google Drive 官方预览 URL
+  const previewUrl = `https://drive.google.com/file/d/${item.id}/preview`;
 
-  const previewUrl = `https://drive.google.com/file/d/${item.id}/preview?autoplay=1&vq=${vqParam}`;
-
-  // 严格沙箱隔离：
-  // 1. 移除 allow-same-origin，阻止内部脚本获取或跨越父级上下文；
-  // 2. 严禁 allow-popups 与 allow-popups-to-escape-sandbox，浏览器底层无条件拦截 window.open 与 target="_blank"；
-  // 3. 顶部覆盖全宽透明安全防护罩（贯穿整行，高 60px），从 DOM 物理层拦截对 Google 片名链接与右上角 Pop-out 弹出按钮的点击
+  // 严格受限沙箱隔离：
+  // 1. 保留 allow-same-origin：允许 Google 预览播放器正常读取 LocalStorage/SessionStorage 状态与媒体上下文；
+  // 2. 严禁 allow-popups 与 allow-popups-to-escape-sandbox：从浏览器底层物理拦截 window.open 与 target="_blank"；
+  // 3. 右上角精准安全防护罩（宽 112px，高 56px）：精准拦截 Google 右上角 Pop-out 弹窗按钮，绝不遮挡顶部中央片名与播放器控件
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}">
       <iframe 
@@ -2171,16 +2163,17 @@ function renderGooglePreview(item) {
         class="border-0 w-full h-full" 
         style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-        sandbox="allow-scripts allow-forms allow-presentation"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
         loading="eager"
       ></iframe>
-      <!-- 顶部全宽透明安全防护罩：彻底拦截任何对 Google 顶栏链接与 Pop-out 弹窗的点击动作，且不遮挡底部播放控制 -->
+      <!-- 右上角精准透明防护罩：仅拦截右上方 Pop-out 新窗口图标，绝不遮挡中间控制与起播交互 -->
       <div 
-        class="absolute top-0 left-0 right-0 h-16 z-30 cursor-default select-none" 
-        style="background: transparent; pointer-events: auto;"
+        class="absolute top-0 right-0 w-28 h-14 z-20 cursor-default select-none pointer-events-auto" 
+        style="background: transparent;"
         onclick="event.stopPropagation(); event.preventDefault();"
         onmousedown="event.stopPropagation(); event.preventDefault();"
         onmouseup="event.stopPropagation(); event.preventDefault();"
+        title="已开启安全受限防护"
       ></div>
     </div>
   `;
@@ -2430,7 +2423,7 @@ function toggleStreamSource() {
   const item = state.activeMediaItem;
   if (!item || !item.isVideo) return;
 
-  const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+  const streamUrl = `${window.location.origin}/api/stream/${item.id}?filename=${encodeURIComponent(item.name)}`;
   const resBadge = getVideoResolution(item);
   const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
 
@@ -2438,7 +2431,7 @@ function toggleStreamSource() {
     showToast(is4K ? "正在切换至 4K 原画直链播放..." : "正在切换至内置原画播放...");
     renderPlayerMedia(item, streamUrl);
   } else {
-    showToast("正在切换至 Google 云端转码预览 (受限安全模式)...");
+    showToast("正在切换至 Google 云端转码预览...");
     renderGooglePreview(item);
   }
 }

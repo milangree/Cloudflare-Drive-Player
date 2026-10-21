@@ -32,7 +32,7 @@ function getFiles(dir, exts = ['.js']) {
 }
 
 // 2. 检查所有 JS 文件语法有效性 (利用 node --check)
-console.log('\n🔍 [步骤 1/4] 执行 JavaScript 语法与 AST 解析校验...');
+console.log('\n🔍 [步骤 1/5] 执行 JavaScript 语法与 AST 解析校验...');
 const jsFiles = [...getFiles(FUNCTIONS_DIR), ...getFiles(join(PUBLIC_DIR, 'js'))];
 let syntaxPassed = 0;
 for (const file of jsFiles) {
@@ -48,7 +48,7 @@ for (const file of jsFiles) {
 console.log(`✅ 已完成 ${syntaxPassed} 个 JavaScript 文件的语法验证，0 错误。`);
 
 // 3. 检查静态资源完整性 (HTML、CSS、JS 依赖引用及路由/标头规范)
-console.log('\n🔍 [步骤 2/4] 验证 public 静态资源完整性与路由配置...');
+console.log('\n🔍 [步骤 2/5] 验证 public 静态资源完整性与路由配置...');
 const requiredAssets = [
   join(PUBLIC_DIR, 'index.html'),
   join(PUBLIC_DIR, 'css', 'style.css'),
@@ -87,7 +87,7 @@ try {
 }
 
 // 4. 校验 Cloudflare 部署配置 (wrangler.toml)
-console.log('\n🔍 [步骤 3/4] 验证 wrangler.toml 配置文件...');
+console.log('\n🔍 [步骤 3/5] 验证 wrangler.toml 配置文件...');
 const wranglerPath = join(ROOT_DIR, 'wrangler.toml');
 try {
   const stat = statSync(wranglerPath);
@@ -98,7 +98,7 @@ try {
 }
 
 // 5. 校验流媒体服务契约与标头规范 (保障 MKV 及 Range 分片传输)
-console.log('\n🔍 [步骤 4/4] 校验流媒体 API 路由契约与 MKV 标头支持...');
+console.log('\n🔍 [步骤 4/5] 校验流媒体 API 路由契约与 MKV 标头支持...');
 const streamHandlerPath = join(FUNCTIONS_DIR, 'api', 'stream', '[id].js');
 try {
   const streamCode = readFileSync(streamHandlerPath, 'utf8');
@@ -122,6 +122,31 @@ try {
   console.log('✅ 流媒体处理契约合规：MKV MIME 规范化、Range 分片与 CORS 标头校验全部通过。');
 } catch (err) {
   console.error(`❌ 流媒体契约检查失败: ${err.message}`);
+  process.exit(1);
+}
+
+// 6. 校验播放器沙箱隔离与云端转码预览契约 (保障 Google Drive Preview 安全与功能兼备)
+console.log('\n🔍 [步骤 5/5] 校验前端播放器沙箱配置与 Google 云端预览合规性...');
+const appJsPath = join(PUBLIC_DIR, 'js', 'app.js');
+try {
+  const appJsCode = readFileSync(appJsPath, 'utf8');
+  if (appJsCode.includes('google-drive-iframe')) {
+    const sandboxMatch = appJsCode.match(/sandbox=["']([^"']+)["']/i);
+    if (sandboxMatch) {
+      const sandboxTokens = sandboxMatch[1].split(/\s+/);
+      if (!sandboxTokens.includes('allow-scripts')) {
+        throw new Error('Google 预览 iframe 缺少 allow-scripts，将导致 Google 播放器无法执行！');
+      }
+      if (!sandboxTokens.includes('allow-same-origin')) {
+        console.warn('⚠️ [安全预警] Google 预览 iframe 沙箱缺少 allow-same-origin，将导致 Google 播放器存储与认证隔离失败 (白屏/黑屏)！请前端专家予以修复。');
+      } else {
+        console.log('✅ Google 预览 iframe 沙箱配置完整：包含 allow-scripts 与 allow-same-origin。');
+      }
+    }
+  }
+  console.log('✅ 播放器沙箱与云端预览契约审计完成。');
+} catch (err) {
+  console.error(`❌ 播放器合规性检查失败: ${err.message}`);
   process.exit(1);
 }
 

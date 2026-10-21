@@ -1,4 +1,5 @@
 import { getAccessToken } from "../../utils/googleAuth.js";
+import { verifyAccessToken, verifyAdminToken } from "../../utils/configManager.js";
 
 /**
  * 文件下载代理接口
@@ -12,6 +13,21 @@ export async function onRequestGet(context) {
 
   if (!fileId) {
     return new Response("Missing file id", { status: 400 });
+  }
+
+  // 校验访问权限（若配置了站点密码）
+  const authHeader = request.headers.get("Authorization") || "";
+  const clientToken = authHeader.replace(/^Bearer\s+/i, "") || url.searchParams.get("token") || "";
+
+  const isAccessValid = (await verifyAccessToken(clientToken, env)) || (await verifyAdminToken(clientToken, env));
+  if (!isAccessValid) {
+    return new Response("需要访问授权令牌 (Unauthorized)", {
+      status: 401,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 
   try {

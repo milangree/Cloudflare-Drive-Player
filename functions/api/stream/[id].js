@@ -1,4 +1,5 @@
 import { getAccessToken } from "../../utils/googleAuth.js";
+import { verifyAccessToken, verifyAdminToken } from "../../utils/configManager.js";
 
 /**
  * 常见媒体扩展名到标准 MIME 类型的映射表
@@ -109,6 +110,21 @@ async function handleStream(context, isHead = false) {
 
   if (!fileId) {
     return new Response("Missing file id", { status: 400 });
+  }
+
+  // 校验访问权限（若配置了站点密码）
+  const authHeader = request.headers.get("Authorization") || "";
+  const clientToken = authHeader.replace(/^Bearer\s+/i, "") || url.searchParams.get("token") || "";
+
+  const isAccessValid = (await verifyAccessToken(clientToken, env)) || (await verifyAdminToken(clientToken, env));
+  if (!isAccessValid) {
+    return new Response("需要访问授权令牌 (Unauthorized)", {
+      status: 401,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 
   // 获取请求中携带的自定义文件名（用于校准 Content-Type 及外部播放器识别）
