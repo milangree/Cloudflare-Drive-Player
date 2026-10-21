@@ -54,6 +54,8 @@
 
 /* Artplayer 播放器与画幅适配 (统一标准容器与无损黑边自适应规范) */
 .art-video-player {
+  position: absolute !important;
+  inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
   max-width: 100% !important;
@@ -61,6 +63,7 @@
   border-radius: 0 0 1rem 1rem !important;
   background: #000 !important;
   font-family: inherit !important;
+  overflow: hidden !important;
 }
 
 #artplayer-container {
@@ -92,9 +95,28 @@
   height: 100% !important;
   max-width: 100% !important;
   max-height: 100% !important;
-  object-fit: contain !important; /* 核心规范：100% 保持原生宽高比，任何分辨率/画幅均保持无损黑边自适应 */
+  object-fit: contain !important; /* 核心规范：100% 保持原生宽高比，任何分辨率/画幅(4:3, 16:9, 21:9, 竖屏)均保持无损黑边自适应 */
   margin: auto !important;
   background: #000 !important;
+  display: block !important;
+}
+
+/* Artplayer 友好通知提示层 (针对 MKV/音频/解码异常居中高可见度提醒) */
+.art-video-player .art-notice {
+  z-index: 50 !important;
+  max-width: 85% !important;
+  padding: 10px 18px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(249, 115, 22, 0.5) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6) !important;
+  color: #fff !important;
 }
 
 /* Artplayer 字幕渲染美化 (对齐 OpenList 影音体验) */

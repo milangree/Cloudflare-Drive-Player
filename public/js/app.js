@@ -1589,6 +1589,80 @@ function formatDuration(sec) {
 }
 
 let resumeBannerTimer = null;
+let blackScreenWatchdog = null;
+
+/**
+ * 启动解码异常与黑屏看门狗 (针对 MKV 容器、AC3/DTS 音频、HEVC 10bit 硬解受限的主动探测)
+ * @param {Object} item 媒体项目元数据
+ * @param {Object} art Artplayer 实例
+ */
+function startMediaWatchdog(item, art) {
+  if (blackScreenWatchdog) {
+    clearTimeout(blackScreenWatchdog);
+    blackScreenWatchdog = null;
+  }
+
+  const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
+  const isMkv = ext === "mkv";
+  const nativePlayable = canBrowserPlayNatively(item);
+
+  // 1. 若静态兼容性探测已知不支持，立即弹出高可见度通知与降级提示条
+  if (!nativePlayable) {
+    const hasAc3Dts = /(dts(-hd)?|truehd|ac3|eac3|ddp|atmos)/i.test(item.name);
+    const hasHevc = /hevc|h265|x265|10bit/i.test(item.name);
+    let reason = "当前浏览器不支持 MKV 容器原生解封装";
+    if (hasAc3Dts) {
+      reason = "视频包含 AC3/DTS/杜比音频轨，浏览器缺少商业解码授权";
+    } else if (hasHevc) {
+      reason = "视频为 HEVC/H.265 编码，当前环境缺少硬件硬解支持";
+    }
+
+    const tip = `${reason}。如遇黑屏或无声，建议点击右侧<strong>【一键切换云端转码】</strong>或调用外部播放器秒播！`;
+    showCodecWarning(tip, true);
+
+    if (art && art.notice) {
+      art.notice.show = isMkv
+        ? "检测到 MKV 容器/特殊音轨，若黑屏请点击顶部切换云端转码"
+        : "当前视频编码可能受限，若黑屏请切换云端转码";
+    }
+  }
+
+  // 2. 动态看门狗探测：在起播后 5 秒内，若视频处于播放状态但无像素画面（videoWidth === 0）或解码卡死
+  blackScreenWatchdog = setTimeout(() => {
+    if (!art || !art.video) return;
+    const video = art.video;
+    const isStalledOrBlack =
+      video.error ||
+      (video.readyState < 2 && !video.paused) ||
+      (video.currentTime === 0 && !video.paused && video.videoWidth === 0);
+
+    if (isStalledOrBlack) {
+      console.warn("Watchdog 探测到视频解码卡死或黑屏:", item.name);
+      const alertMsg = isMkv
+        ? "浏览器无法解码此 MKV 画面或音频（黑屏/无声）。已为您准备好云端转码方案，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
+        : "当前视频解码失败（黑屏）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
+      showCodecWarning(alertMsg, true);
+      if (art.notice) {
+        art.notice.show = "画面解码受阻（黑屏），建议点击顶部一键切换云端转码";
+      }
+    }
+  }, 5000);
+
+  // 3. 正常出画面时（video.videoWidth > 0 且 currentTime > 0.5），清除看门狗并隐藏警告（如果静态判定为可播放）
+  const onTimeUpdate = () => {
+    if (art && art.video && art.video.currentTime > 0.5 && art.video.videoWidth > 0) {
+      if (blackScreenWatchdog) {
+        clearTimeout(blackScreenWatchdog);
+        blackScreenWatchdog = null;
+      }
+      if (nativePlayable) {
+        hideCodecWarning();
+      }
+      art.off("video:timeupdate", onTimeUpdate);
+    }
+  };
+  art.on("video:timeupdate", onTimeUpdate);
+}
 function showResumeBanner(seconds, onRestart) {
   if (!dom.resumePlaybackBanner || !dom.resumeBannerTime) return;
   if (resumeBannerTimer) {
@@ -1929,18 +2003,17 @@ function openMediaPlayer(item) {
     dom.playerDialog.classList.add(
       "w-full",
       "max-w-6xl",
-      "h-[84vh]",
-      "max-h-[860px]",
+      "h-[80vh]",
+      "max-h-[820px]",
       "min-h-[380px]",
       "rounded-2xl",
       "border",
-      "border-slate-800",
-      "transition-all",
-      "duration-300"
+      "border-slate-800"
     );
   }
 
-  const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
+  // 携带文件名参数请求流代理，使后端 Content-Type 识别与外部播放器识别更精准
+  const streamUrl = `${window.location.origin}/api/stream/${item.id}?filename=${encodeURIComponent(item.name)}`;
   dom.playerCopyLinkBtn.onclick = async () => {
     try {
       await navigator.clipboard.writeText(streamUrl);
@@ -1973,26 +2046,14 @@ function openMediaPlayer(item) {
     };
   }
 
-  // 智能起播策略：所有音视频一律默认使用应用内置播放器 (Plyr + 原画流)，彻底杜绝 Google 官方预览弹窗
+  // 关键时序优化：先展示弹窗，使容器完成真实像素尺寸布局，杜绝 Artplayer 初始化时容器尺寸为 0 导致的视口与黑边计算突变
+  dom.playerModal.classList.remove("hidden");
+  dom.playerModal.classList.add("flex");
+
+  // 智能起播策略：所有音视频一律默认使用应用内置播放器
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
-    const resBadge = getVideoResolution(item);
-    const is4K = resBadge === "4K" || /(4k|2160p|uhd)/i.test(item.name);
-    const canPlayNatively = canBrowserPlayNatively(item);
-
-    // 默认一律直接起播内置播放器
     renderPlayerMedia(item, streamUrl);
-
-    if (!canPlayNatively) {
-      const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
-      let warnMsg = "当前视频编码在当前浏览器内核中可能解码受限。如遇黑屏或无声，建议点击右侧【一键切换云端转码】或使用上方外部播放器！";
-      if (ext === "mkv") {
-        warnMsg = "当前浏览器内核未原生支持此 MKV 封装或其内部音视频轨（如 AC3/DTS/HEVC）。若画面黑屏，建议点击右侧<strong>【一键切换云端转码】</strong>！";
-      }
-      showCodecWarning(warnMsg, true);
-    } else {
-      hideCodecWarning();
-    }
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
     hideCodecWarning();
@@ -2001,9 +2062,6 @@ function openMediaPlayer(item) {
 
   updateStreamSourceUI();
   updateAutoplayUI();
-
-  dom.playerModal.classList.remove("hidden");
-  dom.playerModal.classList.add("flex");
 
   if (window.lucide) {
     lucide.createIcons();
@@ -2069,7 +2127,7 @@ function renderPlayerMedia(item, streamUrl) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
 
     const artContainer = document.createElement("div");
-    artContainer.className = "w-full h-full";
+    artContainer.className = "w-full h-full relative";
     artContainer.id = "artplayer-container";
     dom.mediaWrapper.appendChild(artContainer);
 
@@ -2148,7 +2206,7 @@ function renderPlayerMedia(item, streamUrl) {
           }
         },
         mkv: function (video, url, art) {
-          // MKV 容器定制挂载：支持环境（Chromium 等）直接原生解封装起播
+          // MKV 容器定制挂载：支持环境直接原生解封装起播
           video.src = url;
           if (art.option.autoplay) {
             const playPromise = video.play();
@@ -2164,6 +2222,11 @@ function renderPlayerMedia(item, streamUrl) {
 
     // 监听 Artplayer 事件
     state.playerInstance.on("ready", () => {
+      // 触发播放器尺寸重校准，确保无黑边跳变与尺寸偏差
+      if (typeof state.playerInstance.resize === "function") {
+        state.playerInstance.resize();
+      }
+
       // 恢复倍速
       if (savedSpeed !== 1) {
         state.playerInstance.playbackRate = savedSpeed;
@@ -2180,6 +2243,9 @@ function renderPlayerMedia(item, streamUrl) {
           } catch (_) {}
         });
       }
+
+      // 启动黑屏与解码看门狗检测
+      startMediaWatchdog(item, state.playerInstance);
     });
 
     state.playerInstance.on("video:ratechange", () => {
@@ -2218,6 +2284,11 @@ function renderPlayerMedia(item, streamUrl) {
         ? "浏览器无法解码此 MKV 视频画面/音频（黑屏或容器不支持）。已为您准备好云端转码方案，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
         : "当前视频编码在浏览器内核中解码失败（黑屏）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
       showCodecWarning(errorMsg, true);
+      if (state.playerInstance && state.playerInstance.notice) {
+        state.playerInstance.notice.show = isMkvVideo
+          ? "MKV 画面或音频解码受阻（黑屏），请点击顶部一键切换转码"
+          : "当前视频解码受阻（黑屏），请点击顶部一键切换转码";
+      }
       showToast("内置内核解码受限，建议切换云端转码或外部播放器");
     });
 
@@ -2327,8 +2398,8 @@ function togglePlayerMaximize() {
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
     dom.playerDialog.classList.add(
       "max-w-6xl",
-      "h-[84vh]",
-      "max-h-[860px]",
+      "h-[80vh]",
+      "max-h-[820px]",
       "min-h-[380px]",
       "rounded-2xl",
       "border",
@@ -2373,7 +2444,7 @@ function closePlayer() {
     dom.playerDialog.classList.remove(
       "max-w-md",
       "sm:max-w-lg",
-      "h-[80vh]",
+      "h-[84vh]",
       "h-[88vh]",
       "w-screen",
       "h-screen",
@@ -2384,14 +2455,12 @@ function closePlayer() {
     );
     dom.playerDialog.classList.add(
       "max-w-6xl",
-      "h-[84vh]",
-      "max-h-[860px]",
+      "h-[80vh]",
+      "max-h-[820px]",
       "min-h-[380px]",
       "rounded-2xl",
       "border",
-      "border-slate-800",
-      "transition-all",
-      "duration-300"
+      "border-slate-800"
     );
   }
   if (dom.streamSourceToggleBtn) {
@@ -2406,6 +2475,10 @@ function closePlayer() {
 
 function destroyPlayer() {
   hideCodecWarning();
+  if (blackScreenWatchdog) {
+    clearTimeout(blackScreenWatchdog);
+    blackScreenWatchdog = null;
+  }
   if (resumeBannerTimer) {
     clearTimeout(resumeBannerTimer);
     resumeBannerTimer = null;

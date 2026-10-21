@@ -12,7 +12,7 @@
 
 - 🚀 **极简部署 & 零 npm 臃肿依赖**：基于原生 Web 标准与 Cloudflare Pages Functions，免去冗长的 node_modules 打包流程，秒级上传部署。
 - 🎬 **原生 HTTP Range 流式分片代理**：针对 Google Drive 视频播放卡顿与无法快进的通病，后端深度实现了 `Range: bytes=` 请求与 `206 Partial Content` 状态穿透，支持在浏览器中秒开视频、任意拖拽进度条。
-- 🎵 **现代化全能播放器**：集成成熟优雅的 **Plyr.js**，支持视频/音频播放、0.5x~2.0x 倍速播放、画中画 (PiP)、全屏模式与快捷键操作。
+- 🎬 **现代化全能影音内核**：深度集成 **Artplayer** 与 Hls.js / Flv.js，支持视频/音频播放、0.5x~2.0x 倍速记忆、画中画 (PiP)、全屏/网页全屏、同名外挂字幕自动加载与时间轴微调、断点记忆续播及同名剧集自动连播。
 - 🔐 **完备的后台管理系统 (Admin Dashboard)**：
   - **访客安全访问控制**：支持后台一键开关「打开网站需要输入密码」，并随时更改访客访问密码；未解锁用户无法列出和播放任何文件。
   - **动态 SITE_NAME 调整**：直接在后台控制台重命名网站名称，立即生效，无需再去 Cloudflare 改环境变量重部署。
@@ -41,7 +41,7 @@ cf-pages-drive-player/
 │   └── utils/
 │       └── googleAuth.js      # 基于 Web Crypto API 的 RS256 JWT 自动生成与 Token 缓存
 ├── public/
-│   ├── index.html             # 现代化单页应用 (Tailwind + Lucide + Plyr)
+│   ├── index.html             # 现代化单页应用 (Tailwind + Lucide + Artplayer)
 │   ├── css/style.css          # 自定义滚动条与毛玻璃视觉增强
 │   ├── js/app.js              # 核心交互逻辑 (路由/播放/搜索/状态管理)
 │   └── favicon.svg
@@ -141,19 +141,26 @@ npm run deploy
 
 ---
 
-## 📺 全格式极速秒播支持 (MKV / HEVC 10-bit / 特殊编码)
+## 📺 全格式播放支持与兼容性说明 (MKV / HEVC / 特殊音轨)
 
-针对现代浏览器 `<video>` 无法原生解封装 MKV 容器以及部分设备缺少 HEVC 硬解授权的问题，本项目内置了**全平台原生播放器无缝调起体系**：
+### 1. 浏览器原生支持与技术原理
+网页端媒体播放直接受宿主浏览器及底层系统的原生解封装和解码限制：
+- **MP4 / WebM (H.264 + AAC / VP9 + Opus)**：全平台浏览器原生秒开，完美支持 HTTP 206 范围分片拖拽。
+- **MKV (Matroska) 容器**：
+  - **Safari (macOS / iOS)**：底层基于 AVFoundation，苹果不支持 Matroska 容器，网页播放将触发解码告警；
+  - **Chrome / Edge / Firefox**：可直连部分标准编码，但如果音轨采用 **AC-3 (杜比) / DTS** 等商业授权编码，受专利授权限制将导致静音或画面卡死在第 0 帧（黑屏）。
 
-- **⚡ MPV 播放器 (跨平台)**：
-  - 点击「MPV 播放器」直接通过 `mpv://` 协议秒开；
-  - 提供 **「复制 MPV 终端命令」** 按钮，复制后在命令行一键运行：`mpv "直链"`，支持全特效字幕与全格式硬解！
-- **📱 Android ExoPlayer (原生 Intent)**：
-  - 点击「ExoPlayer (Android)」通过系统级 `intent:` 调用底层 ExoPlayer 内核播放器（如 Just Player、Next Player、VLC 等），实现 Android 手机与电视盒子的硬件秒开！
+### 2. 完备的无缝降级与外部秒播方案
+当系统检测到浏览器原生解码受限时，播放器界面会自动弹出提示条，并提供以下多级解决方案：
+- **🌐 Google 官方转码通道**：点击警告栏右侧 **「一键切换云端转码」**，直接无缝切换至 Google Drive 官方转码预览切片，免安装任何软件通吃所有复杂编码。
+- **⚡ MPV 播放器 (跨平台)**：点击直接通过 `mpv://` 协议秒开；提供 **「复制 MPV 终端命令」** 按钮，命令行粘贴 `mpv "直链"` 运行，尊享全特效 ASS 字幕与完整硬件加速。
 - **💻 Windows PotPlayer**：点击一键调起本地 PotPlayer 极速硬件加速。
 - **🍎 macOS IINA**：点击一键调起基于 MPV 核心的 IINA 播放器。
-- **📺 Apple TV / iOS Infuse**：点击一键打开 Infuse 播放。
-- **🌐 Google 官方转码通道**：在任何无本地播放器的公共设备上，可点击「Google 预览」查看官方转码切片。
+- **📱 Android ExoPlayer (原生 Intent)**：通过系统级 `intent:` 调用底层播放内核（如 Just Player、Next Player、VLC 等）。
+- **📺 Apple TV / iOS Infuse**：点击一键直达 Infuse。
+
+### 3. 统一视口与多比例自适应规范
+播放器视口采用无损等比自适应架构（`object-fit: contain`），在切换 16:9（常规剧集）、4:3（怀旧番剧）、21:9（宽银幕电影）或 9:16（手机竖屏）片源时，窗口尺寸保持几何稳定，上下/左右自适应纯黑底色，杜绝界面剧烈晃动与画面变形拉伸。
 
 ---
 
