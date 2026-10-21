@@ -52,28 +52,15 @@
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-/* Plyr 播放器圆角修正 */
-.plyr {
-  border-radius: 0.75rem;
-  overflow: hidden;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+/* Artplayer 播放器与画幅适配 (OpenList 播放技术栈) */
+.art-video-player {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 0 1rem 1rem !important;
+  background: #000 !important;
+  font-family: inherit !important;
 }
 
-/* 播放器顶部操作栏在小屏幕与窄窗口下的自适应弹性排版 */
-#player-header {
-  transition: all 0.2s ease;
-}
-
-@media (max-width: 640px) {
-  #player-dialog {
-    max-height: 94vh !important;
-  }
-  #player-header {
-    padding: 0.5rem 0.75rem !important;
-  }
-}
-
-/* 彻底修复 4K 及所有宽幅/窄幅视频在播放器内被上下裁剪、控制条溢出的问题 */
 #media-wrapper {
   position: relative;
   width: 100%;
@@ -83,43 +70,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #000;
 }
 
-#media-wrapper .plyr {
+#media-wrapper video {
   width: 100% !important;
   height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  border-radius: 0 !important;
-  background: #000 !important;
+  object-fit: contain !important; /* 100% 保持视频原生比例，保证 4K 无损画幅完整呈现 */
 }
 
-#media-wrapper .plyr--video.plyr--full-ui .plyr__video-wrapper {
-  height: 100% !important;
-  max-height: 100% !important;
-  padding-bottom: 0 !important; /* 彻底根除 Plyr 强制 56.25% 比例导致高度溢出被裁剪的问题 */
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  flex: 1 1 auto !important;
-  background: #000 !important;
+/* Artplayer 字幕渲染美化 (对齐 OpenList 影音体验) */
+.art-video-player .art-subtitle {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  padding-bottom: 2rem !important;
+  color: #fff !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.9) !important;
+  line-height: 1.4 !important;
+  z-index: 25 !important;
 }
 
-#media-wrapper .plyr video {
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  object-fit: contain !important; /* 关键：100% 保持视频原生比例，保证 4K 无损画幅完整呈现，绝无任何裁剪 */
-  position: static !important;
-}
-
-#media-wrapper .plyr__controls {
-  flex-shrink: 0 !important;
-  z-index: 20 !important;
+@media (max-width: 640px) {
+  .art-video-player .art-subtitle {
+    font-size: 1rem !important;
+    padding-bottom: 1.2rem !important;
+  }
 }
 
 /* 列表行悬停平滑过渡 */
@@ -145,30 +120,4 @@
 #admin-fab-menu {
   transform-origin: bottom right;
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Plyr 外挂字幕增强样式 (对齐 OpenList 影音体验) */
-.plyr__captions {
-  font-size: 1.15rem !important;
-  font-weight: 600 !important;
-  padding-bottom: 2.2rem !important;
-  z-index: 15 !important;
-}
-
-.plyr__caption {
-  background: rgba(0, 0, 0, 0.78) !important;
-  backdrop-filter: blur(4px) !important;
-  border-radius: 6px !important;
-  padding: 4px 12px !important;
-  color: #fff !important;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
-  letter-spacing: 0.02em !important;
-  line-height: 1.4 !important;
-}
-
-@media (max-width: 640px) {
-  .plyr__captions {
-    font-size: 0.95rem !important;
-    padding-bottom: 1.25rem !important;
-  }
 }

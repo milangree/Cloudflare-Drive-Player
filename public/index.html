@@ -25,9 +25,10 @@
       }
     }
   </script>
-  <!-- Plyr 现代播放器 -->
-  <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
-  <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+  <!-- OpenList 官方技术栈：Artplayer 现代全功能播放器 + Hls.js + Flv.js 解码器 -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flv.js@1/dist/flv.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- 自定义样式 -->
@@ -178,10 +179,10 @@
         <div class="flex items-center gap-2 overflow-hidden min-w-0 w-full sm:w-auto sm:flex-1">
           <i data-lucide="film" class="w-4 h-4 text-brand-500 flex-shrink-0" id="player-type-icon"></i>
           <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-100 truncate select-all flex-1 min-w-0" title="点击可全选完整文件名">正在播放...</span>
-          <!-- 画质源切换按钮 (支持真 4K 原画与 Google 转码预览自由切换) -->
-          <button id="stream-source-toggle-btn" class="hidden px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold items-center gap-1 transition-all flex-shrink-0 cursor-pointer shadow-sm border" title="点击在 4K 原画直链 与 Google 云端预览之间切换">
-            <span id="stream-source-text"></span>
-          </button>
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-brand-500/15 text-brand-400 border border-brand-500/30 flex items-center gap-1 flex-shrink-0">
+            <i data-lucide="zap" class="w-3 h-3"></i>
+            <span>OpenList 极速直出</span>
+          </span>
         </div>
 
         <!-- 功能按钮行 (靠右对齐或小窗口下自成一行，绝不挤压片名) -->

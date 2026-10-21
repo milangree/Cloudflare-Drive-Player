@@ -1645,7 +1645,7 @@ function getSubtitlesInFolder(videoItem) {
     .sort((a, b) => (b.isMatched ? 1 : 0) - (a.isMatched ? 1 : 0));
 }
 
-async function loadSubtitleTrack(videoElement, subItem, makeDefault = true) {
+async function loadSubtitleTrack(subItem, makeDefault = true) {
   try {
     const streamUrl = `/api/stream/${subItem.id}`;
     let vttUrl = streamUrl;
@@ -1666,32 +1666,16 @@ async function loadSubtitleTrack(videoElement, subItem, makeDefault = true) {
       state.activeSubtitleBlobUrl = vttUrl;
     }
 
-    // 移除已有 track
-    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
-
-    const track = document.createElement("track");
-    track.kind = "captions";
-    track.label = subItem.name;
-    track.srclang = "zh";
-    track.src = vttUrl;
-    if (makeDefault) {
-      track.default = true;
-    }
-    videoElement.appendChild(track);
-
     state.activeSubtitleItem = subItem;
     state.currentSubtitleOffset = 0;
+
+    // 若当前播放器是 Artplayer，直接使用其原生的 subtitle 接口
+    if (state.playerInstance && state.playerInstance.subtitle) {
+      state.playerInstance.subtitle.url = vttUrl;
+      state.playerInstance.subtitle.show = true;
+    }
+
     updateSubtitlesUI();
-
-    // 激活 textTracks 并开启 showing
-    setTimeout(() => {
-      if (videoElement.textTracks && videoElement.textTracks.length > 0) {
-        for (let i = 0; i < videoElement.textTracks.length; i++) {
-          videoElement.textTracks[i].mode = "showing";
-        }
-      }
-    }, 200);
-
     showToast(`已挂载字幕: ${subItem.name}`);
   } catch (err) {
     console.error("加载字幕失败:", err);
@@ -1699,7 +1683,7 @@ async function loadSubtitleTrack(videoElement, subItem, makeDefault = true) {
   }
 }
 
-async function loadLocalSubtitleFile(file, videoElement) {
+async function loadLocalSubtitleFile(file) {
   try {
     const ext = (file.name.split(".").pop() || "").toLowerCase();
     const text = await file.text();
@@ -1716,42 +1700,24 @@ async function loadLocalSubtitleFile(file, videoElement) {
     const vttUrl = URL.createObjectURL(blob);
     state.activeSubtitleBlobUrl = vttUrl;
 
-    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
-
-    const track = document.createElement("track");
-    track.kind = "captions";
-    track.label = file.name;
-    track.srclang = "zh";
-    track.src = vttUrl;
-    track.default = true;
-    videoElement.appendChild(track);
-
     state.activeSubtitleItem = { id: "local", name: file.name, isLocal: true };
     state.currentSubtitleOffset = 0;
+
+    if (state.playerInstance && state.playerInstance.subtitle) {
+      state.playerInstance.subtitle.url = vttUrl;
+      state.playerInstance.subtitle.show = true;
+    }
+
     updateSubtitlesUI();
-
-    setTimeout(() => {
-      if (videoElement.textTracks && videoElement.textTracks.length > 0) {
-        for (let i = 0; i < videoElement.textTracks.length; i++) {
-          videoElement.textTracks[i].mode = "showing";
-        }
-      }
-    }, 200);
-
     showToast(`已挂载本地字幕: ${file.name}`);
   } catch (err) {
     showToast(`解析本地字幕失败: ${err.message}`);
   }
 }
 
-function disableSubtitles(videoElement) {
-  if (videoElement) {
-    Array.from(videoElement.querySelectorAll("track")).forEach((t) => t.remove());
-    if (videoElement.textTracks) {
-      for (let i = 0; i < videoElement.textTracks.length; i++) {
-        videoElement.textTracks[i].mode = "disabled";
-      }
-    }
+function disableSubtitles() {
+  if (state.playerInstance && state.playerInstance.subtitle) {
+    state.playerInstance.subtitle.show = false;
   }
   if (state.activeSubtitleBlobUrl) {
     try {
@@ -1765,36 +1731,31 @@ function disableSubtitles(videoElement) {
   showToast("已关闭字幕");
 }
 
-function adjustSubtitleOffset(deltaSeconds, videoElement) {
-  if (!videoElement || !videoElement.textTracks || !videoElement.textTracks.length) {
-    showToast("当前暂无激活的字幕轨道");
+function adjustSubtitleOffset(deltaSeconds) {
+  if (!state.playerInstance || !state.activeSubtitleItem) {
+    showToast("当前暂无激活的字幕");
     return;
   }
-  const track = Array.from(videoElement.textTracks).find((t) => t.mode === "showing") || videoElement.textTracks[0];
-  if (!track || !track.cues || !track.cues.length) {
-    showToast("当前字幕无可用时间点或尚未完成加载");
-    return;
+  if (state.playerInstance && state.playerInstance.subtitle) {
+    state.playerInstance.subtitle.offset = (state.playerInstance.subtitle.offset || 0) + deltaSeconds;
+    state.currentSubtitleOffset = state.playerInstance.subtitle.offset;
+  } else {
+    state.currentSubtitleOffset = (state.currentSubtitleOffset || 0) + deltaSeconds;
   }
-
-  for (let i = 0; i < track.cues.length; i++) {
-    const cue = track.cues[i];
-    cue.startTime = Math.max(0, cue.startTime + deltaSeconds);
-    cue.endTime = Math.max(0, cue.endTime + deltaSeconds);
-  }
-
-  state.currentSubtitleOffset = (state.currentSubtitleOffset || 0) + deltaSeconds;
   const sign = state.currentSubtitleOffset > 0 ? "+" : "";
   const offsetText = `${sign}${state.currentSubtitleOffset.toFixed(1)}s`;
   if (dom.subtitleOffsetVal) dom.subtitleOffsetVal.textContent = offsetText;
   showToast(`字幕时间轴已微调: ${offsetText}`);
 }
 
-function resetSubtitleOffset(videoElement) {
+function resetSubtitleOffset() {
   if (!state.currentSubtitleOffset) {
     showToast("当前字幕偏移已是 0.0s");
     return;
   }
-  adjustSubtitleOffset(-state.currentSubtitleOffset, videoElement);
+  if (state.playerInstance && state.playerInstance.subtitle) {
+    state.playerInstance.subtitle.offset = 0;
+  }
   state.currentSubtitleOffset = 0;
   if (dom.subtitleOffsetVal) dom.subtitleOffsetVal.textContent = "0.0s";
   showToast("字幕时间轴已重置为 0.0s");
@@ -1861,21 +1822,21 @@ function renderSubtitlesMenu(videoItem, subList, video) {
       e.stopPropagation();
       const action = btn.getAttribute("data-sub-action");
       if (action === "disable") {
-        disableSubtitles(video);
-        renderSubtitlesMenu(videoItem, subList, video);
+        disableSubtitles();
+        renderSubtitlesMenu(videoItem, subList);
         return;
       }
       const subId = btn.getAttribute("data-sub-id");
       const target = subList.find((s) => s.item.id === subId);
       if (target) {
-        await loadSubtitleTrack(video, target.item, true);
-        renderSubtitlesMenu(videoItem, subList, video);
+        await loadSubtitleTrack(target.item, true);
+        renderSubtitlesMenu(videoItem, subList);
       }
     };
   });
 }
 
-async function autoDetectAndAttachSubtitles(videoItem, video) {
+async function autoDetectAndAttachSubtitles(videoItem) {
   if (state.activeSubtitleBlobUrl) {
     try {
       URL.revokeObjectURL(state.activeSubtitleBlobUrl);
@@ -1886,13 +1847,13 @@ async function autoDetectAndAttachSubtitles(videoItem, video) {
   state.currentSubtitleOffset = 0;
 
   const subList = getSubtitlesInFolder(videoItem);
-  renderSubtitlesMenu(videoItem, subList, video);
+  renderSubtitlesMenu(videoItem, subList);
 
   // 存在自动匹配的同名字幕时，优先直接挂载
   const matched = subList.find((s) => s.isMatched);
   if (matched) {
-    await loadSubtitleTrack(video, matched.item, true);
-    renderSubtitlesMenu(videoItem, subList, video);
+    await loadSubtitleTrack(matched.item, true);
+    renderSubtitlesMenu(videoItem, subList);
   } else {
     updateSubtitlesUI();
   }
@@ -2039,92 +2000,159 @@ function renderGooglePreview(item) {
   updateSubtitlesUI();
 }
 
-// 渲染播放器内部内容
+// 渲染播放器内部内容 (Artplayer 现代全功能播放内核，对齐 OpenList)
 function renderPlayerMedia(item, streamUrl) {
   destroyPlayer();
   state.isGooglePreview = false;
   dom.mediaWrapper.innerHTML = "";
 
   const savedSpeed = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY)) || 1;
+  const saved = getPlaybackProgress(item.id);
 
   if (item.isVideo) {
     dom.playerTypeIcon.setAttribute("data-lucide", "film");
-    const video = document.createElement("video");
-    video.id = "active-player";
-    video.playsInline = true;
-    video.controls = true;
-    video.crossOrigin = "anonymous";
-    video.src = streamUrl;
-    video.className = "w-full h-full";
-    video.style.objectFit = "contain";
 
-    // 监听播放异常：若浏览器内置内核在拉流或解码时抛错，优先友好提示用户并推荐外部播放器，杜绝自动弹出 Google 预览
-    video.addEventListener("error", () => {
-      if (!video.src || video.src === "about:blank") return;
-      dom.codecWarningBanner.classList.remove("hidden");
-      const bannerSpan = dom.codecWarningBanner.querySelector("span");
-      if (bannerSpan) {
-        bannerSpan.innerHTML =
-          "当前视频画面或音频编码在当前浏览器内核下受限。推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播，或点击标题旁<strong>「⚡ 切换转码预览」</strong>。";
-      }
-      showToast("内置内核解码受限，推荐使用右上角外部播放器");
-    });
+    const artContainer = document.createElement("div");
+    artContainer.className = "w-full h-full";
+    artContainer.id = "artplayer-container";
+    dom.mediaWrapper.appendChild(artContainer);
 
-    dom.mediaWrapper.appendChild(video);
-
-    state.playerInstance = new Plyr(video, {
-      speed: { selected: savedSpeed, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-      keyboard: { focused: true, global: true },
+    // 初始化 Artplayer
+    state.playerInstance = new Artplayer({
+      container: artContainer,
+      url: streamUrl,
+      title: item.name,
+      poster: "",
+      volume: 0.8,
+      isLive: false,
+      muted: false,
       autoplay: true,
-      ratio: null,
-      resetOnEnd: true,
-      captions: { active: true, language: "auto", update: true },
+      pip: true,
+      autoSize: false,
+      autoMini: false,
+      screenshot: true,
+      setting: true,
+      loop: false,
+      flip: true,
+      playbackRate: true,
+      aspectRatio: true,
+      fullscreen: true,
+      fullscreenWeb: false,
+      subtitleOffset: true,
+      miniProgressBar: true,
+      playsInline: true,
+      airplay: true,
+      theme: "#f97316", // 品牌橙色
+      lang: "zh-cn",
+      moreVideoAttr: {
+        crossOrigin: "anonymous",
+      },
+      playbackRate: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+      customType: {
+        m3u8: function (video, url) {
+          if (window.Hls && Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+          } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            video.src = url;
+          }
+        },
+        flv: function (video, url) {
+          if (window.flvjs && flvjs.isSupported()) {
+            const flvPlayer = flvjs.createPlayer({
+              type: "flv",
+              url: url,
+            });
+            flvPlayer.attachMediaElement(video);
+            flvPlayer.load();
+          } else {
+            video.src = url;
+          }
+        },
+      },
     });
 
-    // 监听倍速变化并记忆
-    state.playerInstance.on("ratechange", () => {
-      if (state.playerInstance && state.playerInstance.speed) {
-        localStorage.setItem(SPEED_STORAGE_KEY, state.playerInstance.speed);
+    // 监听 Artplayer 事件
+    state.playerInstance.on("ready", () => {
+      // 恢复倍速
+      if (savedSpeed !== 1) {
+        state.playerInstance.playbackRate = savedSpeed;
+      }
+
+      // 记忆断点续播
+      if (saved && saved.time > 5 && (!saved.duration || saved.time < saved.duration - 10)) {
+        state.playerInstance.currentTime = saved.time;
+        showResumeBanner(saved.time, () => {
+          try {
+            state.playerInstance.currentTime = 0;
+            clearPlaybackProgress(item.id);
+            showToast("已从头开始播放");
+          } catch (_) {}
+        });
       }
     });
 
-    // 自动挂载同名外挂字幕 (OpenList 影音体验)
-    autoDetectAndAttachSubtitles(item, video);
+    state.playerInstance.on("video:ratechange", () => {
+      if (state.playerInstance && state.playerInstance.playbackRate) {
+        localStorage.setItem(SPEED_STORAGE_KEY, state.playerInstance.playbackRate);
+      }
+    });
 
-    // 断点记忆播放：检查并恢复上次播放进度 (OpenList 影音体验)
-    setupResumePlayback(item, video);
+    // 节流定时保存播放进度
+    let lastSaveTime = 0;
+    state.playerInstance.on("video:timeupdate", () => {
+      const now = Date.now();
+      if (now - lastSaveTime > 2500) {
+        lastSaveTime = now;
+        const cur = state.playerInstance.currentTime;
+        const dur = state.playerInstance.duration;
+        if (cur > 5 && dur && cur < dur - 10) {
+          savePlaybackProgress(item.id, cur, dur, item.name);
+        }
+      }
+    });
 
-    // 监听视频播完事件：若开启了连播，自动连播同名/连续剧下一集
-    state.playerInstance.on("ended", () => {
+    // 播完连播下一集
+    state.playerInstance.on("video:ended", () => {
       clearPlaybackProgress(item.id);
       if (state.autoPlayNext) {
         playAdjacentEpisode(1);
       }
     });
+
+    // 播放异常提示
+    state.playerInstance.on("error", () => {
+      dom.codecWarningBanner.classList.remove("hidden");
+      const bannerSpan = dom.codecWarningBanner.querySelector("span");
+      if (bannerSpan) {
+        bannerSpan.innerHTML =
+          "当前视频画面或音频编码在当前浏览器内核下受限。推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播！";
+      }
+      showToast("内置内核解码受限，推荐使用右上角外部播放器");
+    });
+
+    // 自动挂载同名外挂字幕 (OpenList 影音体验)
+    autoDetectAndAttachSubtitles(item);
   } else {
+    // 音频播放
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
     const audio = document.createElement("audio");
     audio.id = "active-player";
     audio.controls = true;
+    audio.autoplay = true;
     audio.src = streamUrl;
     audio.className = "w-full p-4";
     dom.mediaWrapper.appendChild(audio);
 
-    state.playerInstance = new Plyr(audio, {
-      speed: { selected: savedSpeed, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-      autoplay: true,
-    });
-
-    state.playerInstance.on("ratechange", () => {
-      if (state.playerInstance && state.playerInstance.speed) {
-        localStorage.setItem(SPEED_STORAGE_KEY, state.playerInstance.speed);
-      }
-    });
+    state.playerInstance = audio;
+    if (savedSpeed !== 1) {
+      audio.playbackRate = savedSpeed;
+    }
 
     setupResumePlayback(item, audio);
 
-    // 监听音频播完事件：自动下一曲
-    state.playerInstance.on("ended", () => {
+    audio.addEventListener("ended", () => {
       clearPlaybackProgress(item.id);
       if (state.autoPlayNext) {
         playAdjacentEpisode(1);
@@ -2264,8 +2292,12 @@ function destroyPlayer() {
 
   if (state.playerInstance) {
     try {
-      state.playerInstance.stop();
-      state.playerInstance.destroy();
+      if (typeof state.playerInstance.destroy === "function") {
+        state.playerInstance.destroy();
+      } else if (state.playerInstance.pause) {
+        state.playerInstance.pause();
+        state.playerInstance.src = "";
+      }
     } catch (_) {}
     state.playerInstance = null;
   }
@@ -2458,12 +2490,7 @@ function setupEventListeners() {
     dom.localSubInput.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-      const video = document.getElementById("active-player");
-      if (!video) {
-        showToast("请在原画播放模式下挂载字幕");
-        return;
-      }
-      loadLocalSubtitleFile(file, video);
+      loadLocalSubtitleFile(file);
       if (dom.playerSubtitlesMenu) dom.playerSubtitlesMenu.classList.add("hidden");
       e.target.value = "";
     });
@@ -2473,22 +2500,19 @@ function setupEventListeners() {
   if (dom.btnSubDelay) {
     dom.btnSubDelay.addEventListener("click", (e) => {
       e.stopPropagation();
-      const video = document.getElementById("active-player");
-      adjustSubtitleOffset(0.5, video);
+      adjustSubtitleOffset(0.5);
     });
   }
   if (dom.btnSubAdvance) {
     dom.btnSubAdvance.addEventListener("click", (e) => {
       e.stopPropagation();
-      const video = document.getElementById("active-player");
-      adjustSubtitleOffset(-0.5, video);
+      adjustSubtitleOffset(-0.5);
     });
   }
   if (dom.btnSubReset) {
     dom.btnSubReset.addEventListener("click", (e) => {
       e.stopPropagation();
-      const video = document.getElementById("active-player");
-      resetSubtitleOffset(video);
+      resetSubtitleOffset();
     });
   }
 
