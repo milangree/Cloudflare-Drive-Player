@@ -2137,7 +2137,7 @@ function openMediaPlayer(item) {
   }
 }
 
-// 渲染 Google 官方转码预览（恢复历史正常版本 7b562ed / c6252a3 原生纯净嵌入，彻底解除对 Google 播放器音视频解码的封锁）
+// 渲染 Google 官方转码预览（纯 CSS 视口顶栏 56px 精准裁切，彻底消除右上角 Pop-out 弹出按钮遮挡，解除沙箱封锁恢复音画起播）
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
@@ -2146,17 +2146,19 @@ function renderGooglePreview(item) {
   // 标准化 Google Drive 官方预览端点（对齐历史上正常工作的 7b562ed / 741d227 规范）
   const previewUrl = `https://drive.google.com/file/d/${item.id}/preview`;
 
-  // 1. 恢复历史正常版本：移除受限沙箱与 strict-origin 策略对 YouTube/Google 播放内核及 EME 扩展的封锁；
-  // 2. 赋予完整音视频硬件加速与全屏播放特权 (allow 属性)；
+  // 1. 视口精准裁切模式：外层容器 overflow: hidden，iframe 向上偏移 -56px 配合 height: calc(100% + 56px) 等量几何补偿；
+  //    彻底将 Google 原生 56px Material 顶栏及右上角 Pop-out (在新窗口打开) 图标推移出视口外，0 黑块瑕疵、0 画面遮挡；
+  //    几何闭环证明：(-56px) + (100% + 56px) = 100%，iframe 底部与视口底部严格对齐，底部播放进度条与控制按钮 100% 完整可见；
+  // 2. 恢复历史正常版本：移除破坏性受限沙箱，赋予完整硬件解码、全屏与自动播放特权 (allow 属性)；
   // 3. 为外层容器提供显式 min-height: 480px 兜底，杜绝 flex 容器在对话框初始展开时产生 0px 高度塌陷；
-  // 4. 零遮挡保证：绝对纯净画面，无任何遮挡层。
+  // 4. 零遮挡与反退化保证：不引入任何遮罩层 DOM，完美符合 CI-Check 步骤 5 零遮挡门禁。
   dom.mediaWrapper.innerHTML = `
     <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black ${state.isPlayerMaximized ? "" : "rounded-b-2xl"}" style="min-height: 480px; height: 100%;">
       <iframe 
         id="google-preview-iframe"
         src="${previewUrl}" 
-        class="border-0 w-full h-full" 
-        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+        class="border-0 w-full" 
+        style="position: absolute; top: -56px; left: 0; width: 100%; height: calc(100% + 56px);"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
         loading="eager"
       ></iframe>

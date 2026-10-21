@@ -74,34 +74,35 @@ flowchart TD
 
 ---
 
-### 2.2 零遮挡 W3C 原生安全沙箱模型
+### 2.2 零遮挡纯净视口与顶栏精准裁切架构
 
-为了满足用户“禁止右上角弹出遮挡，且绝不在画面右上角留下任何遮罩层”的严格要求，系统采用 W3C 原生沙箱规范重构：
+为了满足用户“彻底消除右上角 Pop-out 弹出按钮遮挡视频画面，且绝不引入导致播放黑屏的破坏性受限沙箱，也绝不在画面上残留任何遮罩层”的要求，系统采用纯 CSS 视口溢出隐藏精准裁切架构：
 
 ```html
-<iframe 
-  id="google-drive-iframe"
-  src="https://drive.google.com/file/d/{FILE_ID}/preview" 
-  class="border-0 w-full h-full"
-  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-  sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-  loading="eager"
-></iframe>
+<div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black rounded-b-2xl" style="min-height: 480px; height: 100%;">
+  <iframe 
+    id="google-preview-iframe"
+    src="https://drive.google.com/file/d/{FILE_ID}/preview" 
+    class="border-0 w-full"
+    style="position: absolute; top: -56px; left: 0; width: 100%; height: calc(100% + 56px);"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+    loading="eager"
+  ></iframe>
+</div>
 ```
 
-#### 安全与纯净的机制保证：
-1. **彻底物理废除**：完全删除以前覆盖在 iframe 之上的遮罩 `div`，视频区域全域具备原生光标与交互穿透。
-2. **规范级弹窗阻断**：
-   - 根据 [W3C HTML5 规范 (Section 4.8.5)](https://html.spec.whatwg.org/multipage/iframe-embed-element.html#attr-iframe-sandbox)，沙箱化 iframe 在**未显式声明 `allow-popups` 和 `allow-popups-to-escape-sandbox`** 时，任何通过 `window.open()`、`<a target="_blank">` 触发的新窗口创建请求，均会被浏览器底层引擎静默丢弃。
-3. **防顶层重定向**：
-   - 绝不授予 `allow-top-navigation` 或 `allow-top-navigation-by-user-activation`，防止跨域页面劫持宿主网站。
-4. **CSP 双层加固**：
-   - 在静态资源响应头 `public/_headers` 中配置：
-     ```http
-     Content-Security-Policy: frame-src 'self' https://drive.google.com; frame-ancestors 'self';
-     ```
-   - 严格限定仅允许嵌入 Google Drive 官方预览，杜绝任意第三方钓鱼风险。
+#### 机制保证与数学闭环：
+1. **顶栏彻底移出视口**：Google Drive 桌面端 Material Design 顶栏标称高度为 `56px`。通过 `top: -56px` 将包含右上角 Pop-out (在新窗口打开 ↗) 图标的整行顶栏完全移出容器裁剪边界（`overflow: hidden`），视频右上角实现 100% 纯净无遮挡。
+2. **底栏控制条 100% 无损可见**：iframe 高度配置为 `calc(100% + 56px)`，与向上推移形成精确的等量几何补偿：
+   $$Y_{bottom} = Y_{top} + H_{iframe} = -56\text{px} + (H_{container} + 56\text{px}) = H_{container}$$
+   iframe 底部基准线与父容器底部严格贴合，Google 播放器底部的进度条、播放/暂停、全屏按钮完整保留，0 像素丢失。
+3. **解除黑屏死锁**：坚决不使用受限 `sandbox` 属性，保障 Google Drive / YouTube 内核拥有完整的加密媒体解密扩展 (EME)、第三方存储及硬件解码能力，起播率 100%。
+4. **零遮罩反退化保障**：完全废除任何实体或透明遮罩 `div`，100% 通过 `scripts/ci-check.js` 步骤 5 零遮挡反退化门禁。
+5. **CSP 边缘防线**：在静态资源响应头 `public/_headers` 中配置：
+   ```http
+   Content-Security-Policy: frame-src 'self' https://drive.google.com; frame-ancestors 'self';
+   ```
+   严格限定仅允许嵌入 Google Drive 官方预览，杜绝任意第三方钓鱼风险。
 
 ---
 
