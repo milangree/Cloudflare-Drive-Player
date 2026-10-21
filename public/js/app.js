@@ -257,17 +257,10 @@ function canBrowserPlayNatively(item) {
   const testVideo = document.createElement("video");
 
   // 1. MKV 容器兼容性探测 (Matroska / WebM 衍生)
-  // 现代 Chromium 桌面端仅能直接解封装严格遵循 WebM 兼容子集或特定组合的 MKV 容器
-  // 而 WebKit / Safari 等完全不支持任何 video/x-matroska
+  // 现代 Chromium 桌面端仅对纯 WebM 子集具备有限原生解封装能力，绝大多数 MKV (尤其是 H.264/HEVC + DTS/AC3/FLAC) 会触发黑屏有声音或直接报错
+  // WebKit / Safari 等完全不支持任何 video/x-matroska。统一判定为不可原生播放，触发自动降级至 Google 预览
   if (ext === "mkv") {
-    const canPlayMkv = !!(
-      testVideo.canPlayType("video/x-matroska") ||
-      testVideo.canPlayType('video/x-matroska; codecs="avc1.42E01E, mp4a.40.2"') ||
-      testVideo.canPlayType('video/x-matroska; codecs="vp9, opus"')
-    );
-    if (!canPlayMkv) {
-      return false; // Safari 等不支持 MKV 容器解封装的浏览器明确判定不可播
-    }
+    return false;
   }
 
   // 2. 针对常见多声道专业音频编码检测 (DTS, TrueHD, AC3, EAC3/DDP, 杜比全景声 Atmos)
@@ -924,7 +917,11 @@ function renderGridView(items) {
       if (thumbUrl && (item.isVideo || item.isImage)) {
         mediaPosterHtml = `
           <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 border border-slate-800/80 group-hover:border-brand-500/40 transition-colors">
-            <img src="${thumbUrl}" alt="${item.name}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.parentElement.style.display='none'">
+            <img src="${thumbUrl}" alt="${item.name}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.classList.add('hidden');const fb=this.nextElementSibling?.classList?.contains('thumb-fallback')?this.nextElementSibling:null;if(fb){fb.classList.remove('hidden');}">
+            <div class="thumb-fallback hidden absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-slate-500">
+              <i data-lucide="${item.isVideo ? 'film' : 'image'}" class="w-8 h-8 mb-1 text-slate-600"></i>
+              <span class="text-[10px] text-slate-500">${ext ? ext.toUpperCase() : '预览'}</span>
+            </div>
             ${
               item.isVideo
                 ? `<div class="absolute inset-0 bg-black/25 group-hover:bg-black/10 flex items-center justify-center transition-colors">
@@ -1619,8 +1616,8 @@ function checkVideoRenderStatus(video) {
     frames = video.webkitDecodedFrameCount;
   }
 
-  // 若能获取解码帧统计，必须大于 0；若环境不支持统计，则以尺寸为主
-  const hasFrames = frames === null ? hasDimensions : frames > 0;
+  // 若能获取解码帧统计，必须大于 0；若环境无法获取统计指标，且视频有进度，则保守判断
+  const hasFrames = frames !== null ? frames > 0 : (hasDimensions && video.currentTime > 0);
   const hasVideo = hasDimensions && hasFrames;
 
   return { hasDimensions, hasFrames, hasVideo };
@@ -1645,25 +1642,12 @@ function startMediaWatchdog(item, art) {
   const isMkv = ext === "mkv";
   const nativePlayable = canBrowserPlayNatively(item);
 
-  // 1. 若静态兼容性探测已知不支持，立即弹出高可见度通知与降级提示条
+  // 1. 若静态兼容性探测已知不支持，立即直接触发自动无感切换至云端转码预览播放
   if (!nativePlayable) {
-    const hasAc3Dts = /(dts(-hd)?|truehd|ac3|eac3|ddp|atmos)/i.test(item.name);
-    const hasHevc = /(hevc|h\.?265|x265|10bit|hdr|main10)/i.test(item.name);
-    let reason = "当前浏览器不支持 MKV 容器原生解封装";
-    if (hasAc3Dts) {
-      reason = "视频包含 AC3/DTS/杜比音频轨，浏览器缺少商业解码授权";
-    } else if (hasHevc) {
-      reason = "视频为 HEVC/H.265 编码，当前 PC Chrome 环境缺少硬件硬解或系统 HEVC 扩展支持";
-    }
-
-    const tip = `${reason}。如遇黑屏或无声，建议点击右侧<strong>【一键切换云端转码】</strong>或调用外部播放器秒播！`;
-    showCodecWarning(tip, true);
-
-    if (art && art.notice) {
-      art.notice.show = isMkv
-        ? "检测到 MKV 容器/特殊音轨，若黑屏请点击顶部切换云端转码"
-        : "当前视频编码可能受限，若黑屏请切换云端转码";
-    }
+    console.info("[Watchdog] 静态特征命中不可原生播放格式，自动切换至云端转码预览:", item.name);
+    showToast("检测到当前视频格式或编码受限，已自动为您启用云端转码预览播放...", 3500);
+    renderGooglePreview(item);
+    return;
   }
 
   // 辅助判定：分析视频是否已陷入“黑屏无画面/卡死”状态
@@ -2365,12 +2349,22 @@ function renderPlayerMedia(item, streamUrl) {
       }
     });
 
-    // 播放异常自动智能降级
+    // 播放异常自动智能降级至 Google 云端转码预览
     state.playerInstance.on("error", (error) => {
       console.warn("Artplayer 遇到播放错误，自动切换至云端转码预览播放:", error);
       showToast("检测到浏览器无法正常解码播放，已自动为您无感切换为云端转码预览...", 3500);
       renderGooglePreview(item);
     });
+
+    // 原生底层 HTML5 <video> 错误深度拦截 (MEDIA_ERR_DECODE / MEDIA_ERR_SRC_NOT_SUPPORTED / 网络错误)
+    if (state.playerInstance.video) {
+      const onNativeVideoError = () => {
+        console.warn("HTML5 video 底层硬件解码或媒体源加载失败，自动降级至 Google 预览");
+        showToast("检测到底层硬件解码失败或格式受限，已自动切换为云端转码预览...", 3500);
+        renderGooglePreview(item);
+      };
+      state.playerInstance.video.addEventListener("error", onNativeVideoError, { once: true });
+    }
 
     // 自动挂载同名外挂字幕 (OpenList 影音体验)
     autoDetectAndAttachSubtitles(item);

@@ -76,7 +76,7 @@ export async function onRequestGet(context) {
     driveApiUrl.searchParams.set("q", q);
     driveApiUrl.searchParams.set(
       "fields",
-      "nextPageToken, files(id, name, mimeType, size, modifiedTime, thumbnailLink, iconLink, videoMediaMetadata, shortcutDetails)"
+      "nextPageToken, files(id, name, mimeType, size, modifiedTime, hasThumbnail, thumbnailLink, iconLink, videoMediaMetadata, shortcutDetails)"
     );
     driveApiUrl.searchParams.set("orderBy", "folder, name_natural asc");
     driveApiUrl.searchParams.set("pageSize", "1000");
@@ -154,6 +154,7 @@ export async function onRequestGet(context) {
         itemCount: 0,
         modifiedTime: f.modifiedTime,
         thumbnailLink: f.thumbnailLink || null,
+        hasThumbnail: Boolean(f.hasThumbnail),
         videoMediaMetadata: f.videoMediaMetadata || null,
         isFolder,
         isVideo,
