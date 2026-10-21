@@ -26,6 +26,8 @@ const state = {
   accessToken: localStorage.getItem("access_token") || "",
   adminToken: localStorage.getItem("admin_token") || "",
   isAdmin: false,
+  // 显式多选模式开关 (OpenList 范式：日常浏览纯净无扰，开启后优先触发选中防误触)
+  selectMode: false,
   // 批量操作多选状态 (Set 存储当前已选 item.id)
   selectedItemIds: new Set(),
 };
@@ -47,6 +49,8 @@ const dom = {
   viewModeBtn: document.getElementById("view-mode-btn"),
   viewIcon: document.getElementById("view-icon"),
   adminEntryBtn: document.getElementById("admin-entry-btn"),
+  toggleSelectModeBtn: document.getElementById("toggle-select-mode-btn"),
+  selectModeIcon: document.getElementById("select-mode-icon"),
   loadingSkeleton: document.getElementById("loading-skeleton"),
   gridView: document.getElementById("grid-view"),
   listView: document.getElementById("list-view"),
@@ -86,6 +90,8 @@ const dom = {
   // 批量操作底吸浮动工具栏与模态框
   batchActionBar: document.getElementById("batch-action-bar"),
   batchSelectedCount: document.getElementById("batch-selected-count"),
+  batchSelectAllBtn: document.getElementById("batch-select-all-btn"),
+  batchInvertSelectionBtn: document.getElementById("batch-invert-selection-btn"),
   batchClearSelectionBtn: document.getElementById("batch-clear-selection-btn"),
   batchRenameTriggerBtn: document.getElementById("batch-rename-trigger-btn"),
   batchMoveTriggerBtn: document.getElementById("batch-move-trigger-btn"),
@@ -378,7 +384,55 @@ async function checkSystemInfo() {
 function updateAdminUIState() {
   const hasAdmin = Boolean(state.adminToken);
   state.isAdmin = hasAdmin;
+
+  // 显式多选开关按钮仅管理员可见可用
+  if (dom.toggleSelectModeBtn) {
+    if (state.isAdmin) {
+      dom.toggleSelectModeBtn.classList.remove("hidden");
+    } else {
+      dom.toggleSelectModeBtn.classList.add("hidden");
+      // 若退出管理员登录，重置多选模式
+      exitSelectMode();
+    }
+  }
+
   updateBatchActionBar();
+}
+
+// OpenList 范式：进入多选模式
+function enterSelectMode() {
+  if (!state.isAdmin) return;
+  state.selectMode = true;
+  document.body.classList.add("select-mode-active");
+  if (dom.toggleSelectModeBtn) {
+    dom.toggleSelectModeBtn.classList.add("bg-brand-500", "text-white", "border-brand-400");
+    dom.toggleSelectModeBtn.classList.remove("bg-slate-900/80", "text-slate-300");
+    dom.toggleSelectModeBtn.title = "退出多选模式";
+  }
+  updateBatchActionBar();
+}
+
+// OpenList 范式：退出多选模式
+function exitSelectMode() {
+  state.selectMode = false;
+  state.selectedItemIds.clear();
+  document.body.classList.remove("select-mode-active");
+  if (dom.toggleSelectModeBtn) {
+    dom.toggleSelectModeBtn.classList.remove("bg-brand-500", "text-white", "border-brand-400");
+    dom.toggleSelectModeBtn.classList.add("bg-slate-900/80", "text-slate-300");
+    dom.toggleSelectModeBtn.title = "多选模式";
+  }
+  syncSelectionVisuals();
+  updateBatchActionBar();
+}
+
+// OpenList 范式：切换多选模式
+function toggleSelectMode() {
+  if (state.selectMode) {
+    exitSelectMode();
+  } else {
+    enterSelectMode();
+  }
 }
 
 // 批量操作：多选状态管理与底部工具栏联动
@@ -386,7 +440,8 @@ function updateBatchActionBar() {
   if (!dom.batchActionBar) return;
   const count = state.selectedItemIds.size;
 
-  if (count > 0 && state.isAdmin) {
+  // 处于多选模式或已有勾选，且为管理员时常驻展示底吸工具栏
+  if ((state.selectMode || count > 0) && state.isAdmin) {
     if (dom.batchSelectedCount) {
       dom.batchSelectedCount.textContent = `已选 ${count} 项`;
     }
@@ -422,20 +477,39 @@ function getCurrentlyVisibleItems() {
   return (state.filteredItems || []).slice(startIdx, startIdx + size);
 }
 
-// 切换单项选择状态
+// 切换单项选择状态 (支持 O(1) 局部节点快速更新)
 function toggleSelectItem(id, forceValue) {
-  if (typeof forceValue === "boolean") {
-    if (forceValue) state.selectedItemIds.add(id);
-    else state.selectedItemIds.delete(id);
-  } else {
-    if (state.selectedItemIds.has(id)) {
-      state.selectedItemIds.delete(id);
-    } else {
-      state.selectedItemIds.add(id);
+  const willSelect = typeof forceValue === "boolean" ? forceValue : !state.selectedItemIds.has(id);
+  if (willSelect) {
+    state.selectedItemIds.add(id);
+    if (!state.selectMode && state.isAdmin) {
+      enterSelectMode();
     }
+  } else {
+    state.selectedItemIds.delete(id);
   }
-  syncSelectionVisuals();
+
+  updateSingleItemVisual(id, willSelect);
   updateBatchActionBar();
+}
+
+// O(1) 精准定向更新单个条目的视觉选中状态，杜绝整页扫描重排
+function updateSingleItemVisual(id, isSelected) {
+  // 网格卡片
+  const card = document.querySelector(`.glass-card[data-id="${id}"]`);
+  if (card) {
+    card.classList.toggle("item-selected-card", isSelected);
+    const cb = card.querySelector(".item-checkbox");
+    if (cb) cb.checked = isSelected;
+  }
+
+  // 列表行
+  const row = document.querySelector(`.file-row[data-id="${id}"]`);
+  if (row) {
+    row.classList.toggle("item-selected-row", isSelected);
+    const cb = row.querySelector(".item-checkbox");
+    if (cb) cb.checked = isSelected;
+  }
 }
 
 // 全选/全不选当前页项目
@@ -445,6 +519,23 @@ function toggleSelectAllCurrentPage(forceChecked) {
   visible.forEach((i) => {
     if (shouldSelect) state.selectedItemIds.add(i.id);
     else state.selectedItemIds.delete(i.id);
+  });
+  if (shouldSelect && !state.selectMode && state.isAdmin) {
+    enterSelectMode();
+  }
+  syncSelectionVisuals();
+  updateBatchActionBar();
+}
+
+// 反选当前页项目 (OpenList 范式标配)
+function invertSelectionCurrentPage() {
+  const visible = getCurrentlyVisibleItems();
+  visible.forEach((i) => {
+    if (state.selectedItemIds.has(i.id)) {
+      state.selectedItemIds.delete(i.id);
+    } else {
+      state.selectedItemIds.add(i.id);
+    }
   });
   syncSelectionVisuals();
   updateBatchActionBar();
@@ -464,7 +555,7 @@ function syncSelectionVisuals() {
     const id = row.getAttribute("data-id");
     const isSelected = state.selectedItemIds.has(id);
     row.classList.toggle("item-selected-row", isSelected);
-    const cb = row.querySelector(".item-select-checkbox");
+    const cb = row.querySelector(".item-checkbox");
     if (cb) cb.checked = isSelected;
   });
 
@@ -473,7 +564,7 @@ function syncSelectionVisuals() {
     const id = card.getAttribute("data-id");
     const isSelected = state.selectedItemIds.has(id);
     card.classList.toggle("item-selected-card", isSelected);
-    const cb = card.querySelector(".item-select-checkbox");
+    const cb = card.querySelector(".item-checkbox");
     if (cb) cb.checked = isSelected;
   });
 }
@@ -1271,7 +1362,7 @@ function renderGridView(items) {
       return `
         <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group relative transition-all duration-200 ${isSelected ? "item-selected-card" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
           <!-- 勾选复选框 (左上角高优先级层级) -->
-          <div class="absolute top-2 left-2 z-20">
+          <div class="absolute top-2 left-2 z-20 item-checkbox-wrapper">
             <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900/90 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
           </div>
           ${!mediaPosterHtml && resBadge ? `<span class="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-black tracking-widest uppercase">${resBadge}</span>` : ""}
@@ -1286,7 +1377,7 @@ function renderGridView(items) {
             <div class="flex items-start gap-3">
               ${
                 !mediaPosterHtml
-                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color} ${item.isFolder ? "cursor-pointer hover:border-brand-500/50 hover:bg-slate-700/50 folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "点击进入文件夹" : ""}">
+                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color} ${item.isFolder ? "cursor-pointer hover:border-brand-500/50 hover:bg-slate-700/50 folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "点击进入文件夹 (多选模式下可 Alt+点击)" : ""}">
                       <i data-lucide="${icon}" class="w-5 h-5"></i>
                     </div>`
                   : ""
@@ -1311,7 +1402,7 @@ function renderGridView(items) {
             <div class="flex items-center gap-1 opacity-90 transition-opacity">
               ${
                 item.isFolder
-                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger" data-id="${item.id}" title="进入文件夹">
+                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger folder-penetrate-btn" data-id="${item.id}" title="进入文件夹">
                       <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
                       <span>打开</span>
                     </button>`
@@ -1379,7 +1470,7 @@ function renderListView(items) {
 
       return `
         <tr class="file-row group transition-colors ${isSelected ? "item-selected-row" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <td class="w-10 px-3 py-2.5 text-center">
+          <td class="w-10 px-3 py-2.5 text-center item-checkbox-wrapper">
             <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
           </td>
           <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
@@ -1388,7 +1479,7 @@ function renderListView(items) {
                 ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0 cursor-pointer media-action-trigger hover:opacity-80 transition-opacity" data-id="${item.id}" data-action="${item.isVideo ? "play" : "image"}" title="${item.isVideo ? "点击播放" : "点击预览"}">
                     <img src="${thumbUrl}" alt="" class="w-full h-full object-cover">
                   </div>`
-                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "进入文件夹" : ""}">
+                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "进入文件夹 (多选模式下可 Alt+点击)" : ""}">
                     <i data-lucide="${icon}" class="w-4 h-4"></i>
                   </div>`
             }
@@ -1411,7 +1502,7 @@ function renderListView(items) {
             <div class="flex items-center justify-end gap-1">
               ${
                 item.isFolder
-                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger mr-1" data-id="${item.id}" title="进入文件夹">
+                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger folder-penetrate-btn mr-1" data-id="${item.id}" title="进入文件夹">
                       <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
                       <span>打开</span>
                     </button>`
@@ -1479,7 +1570,7 @@ function triggerFileDownload(item) {
   document.body.removeChild(a);
 }
 
-// 绑定卡片与列表行点击事件
+// 绑定卡片与列表行点击事件 (OpenList 优先级仲裁范式)
 function bindItemEvents(container) {
   // 0. 复选框勾选事件：阻止冒泡并切换单项选中状态
   container.querySelectorAll(".item-checkbox").forEach((cb) => {
@@ -1498,26 +1589,42 @@ function bindItemEvents(container) {
   // 1. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
   container.querySelectorAll(".folder-enter-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
       const id = el.getAttribute("data-id");
       const item = state.items.find((i) => i.id === id);
-      if (item && item.isFolder) {
-        navigateToFolder(item.id, item.name);
+      if (!item || !item.isFolder) return;
+
+      // 在多选激活模式下，优先作为选择行，除非按住 Alt/Option 或点击穿透按钮
+      if (state.selectMode && !e.altKey && !el.classList.contains("folder-penetrate-btn")) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelectItem(id);
+        return;
       }
+
+      e.preventDefault();
+      e.stopPropagation();
+      navigateToFolder(item.id, item.name);
     });
   });
 
   // 2. 媒体操作事件（视频播放 / 图片预览）：点击海报预览图、标题、或具体动作按钮时触发
   container.querySelectorAll(".media-action-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
       const id = el.getAttribute("data-id");
-      const action = el.getAttribute("data-action");
       const item = state.items.find((i) => i.id === id);
       if (!item) return;
 
+      // 在多选激活模式下，优先作为选择行，防止误触导致视频播放弹窗打断多选
+      if (state.selectMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelectItem(id);
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      const action = el.getAttribute("data-action");
       if (action === "play" || item.isVideo || item.isAudio) {
         openMediaPlayer(item);
       } else if (action === "image" || item.isImage) {
@@ -1531,11 +1638,38 @@ function bindItemEvents(container) {
   // 3. 播放按钮
   container.querySelectorAll(".play-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
+      const id = btn.getAttribute("data-id");
+      if (state.selectMode) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSelectItem(id);
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
-      const id = btn.getAttribute("data-id");
       const item = state.items.find((i) => i.id === id);
       if (item) openMediaPlayer(item);
+    });
+  });
+
+  // 3.5 整行/整卡片点击代理 (OpenList 核心体验：多选模式下任意点击整行直接切换勾选)
+  container.querySelectorAll(".glass-card, .file-row").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      // 避免重复触发内部已处理的交互按钮
+      if (
+        e.target.closest("button") || 
+        e.target.closest("a") || 
+        e.target.closest("input") || 
+        e.target.closest(".media-action-trigger") || 
+        e.target.closest(".folder-enter-trigger")
+      ) {
+        return;
+      }
+      const id = card.getAttribute("data-id");
+      if (state.selectMode) {
+        e.preventDefault();
+        toggleSelectItem(id);
+      }
     });
   });
 
@@ -3333,7 +3467,14 @@ function setupEventListeners() {
     dom.cancelFileActionBtn.addEventListener("click", closeFileActionModal);
   }
 
-  // ==================== 批量操作事件绑定 ====================
+  // ==================== 批量操作与 OpenList 多选模式事件绑定 ====================
+  // 显式多选开关按钮
+  if (dom.toggleSelectModeBtn) {
+    dom.toggleSelectModeBtn.addEventListener("click", () => {
+      toggleSelectMode();
+    });
+  }
+
   // 全选 / 反选复选框 (表头)
   if (dom.selectAllCheckbox) {
     dom.selectAllCheckbox.addEventListener("change", (e) => {
@@ -3341,10 +3482,24 @@ function setupEventListeners() {
     });
   }
 
-  // 清空选中
+  // 底部工具栏全选按钮
+  if (dom.batchSelectAllBtn) {
+    dom.batchSelectAllBtn.addEventListener("click", () => {
+      toggleSelectAllCurrentPage(true);
+    });
+  }
+
+  // 底部工具栏反选按钮
+  if (dom.batchInvertSelectionBtn) {
+    dom.batchInvertSelectionBtn.addEventListener("click", () => {
+      invertSelectionCurrentPage();
+    });
+  }
+
+  // 清空选中并退出多选
   if (dom.batchClearSelectionBtn) {
     dom.batchClearSelectionBtn.addEventListener("click", () => {
-      clearAllSelection();
+      exitSelectMode();
     });
   }
 

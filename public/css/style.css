@@ -158,3 +158,42 @@
   border-color: rgba(14, 165, 233, 0.6) !important;
   box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.4), 0 8px 20px -4px rgba(14, 165, 233, 0.15) !important;
 }
+
+/* OpenList 多选模式范式样式 (基于 body.select-mode-active 状态分流) */
+/* 默认非多选状态下，列表与网格中的复选框保持隐藏或仅轻量感知 */
+.select-mode-active #view-container .item-checkbox-wrapper,
+.select-mode-active #list-tbody .item-checkbox-wrapper {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* 多选态下整行/卡片鼠标指针指示为可选中 */
+.select-mode-active .glass-card,
+.select-mode-active .file-row {
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+/* 多选态下文件夹专属穿透按钮 (用于移动端或免快捷键快速进入) */
+.folder-penetrate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 11px;
+  background-color: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  color: #94a3b8;
+  transition: all 0.15s ease;
+}
+.folder-penetrate-btn:hover {
+  background-color: rgba(14, 165, 233, 0.2);
+  border-color: rgba(14, 165, 233, 0.5);
+  color: #38bdf8;
+}
+
+/* 底部操作栏安全区适配 (兼容 iPhone 等全面屏) */
+#batch-action-bar {
+  bottom: max(1.5rem, env(safe-area-inset-bottom, 1.5rem)) !important;
+}
