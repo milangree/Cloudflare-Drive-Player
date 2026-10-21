@@ -1,5 +1,7 @@
 /**
  * Cloudflare Pages 部署后自动化健康检查与冒烟测试脚本 (Smoke Test)
+ * 具备边缘分布式网络就绪预热探测与指数退避重试 (Exponential Backoff) 机制
+ *
  * 用法:
  *   node scripts/healthcheck.js [TARGET_URL]
  * 示例:
@@ -7,7 +9,7 @@
  *   node scripts/healthcheck.js https://cf-pages-drive-player.pages.dev
  */
 
-const targetUrl = process.argv[2] || process.env.PAGES_DEPLOYED_URL;
+const targetUrl = process.argv[2] || process.env.PAGES_DEPLOYED_URL || process.env.DEPLOYED_URL;
 
 if (!targetUrl) {
   console.log('ℹ️ 未提供部署目标 URL，执行本地端点契约与配置模拟健康检查...');
@@ -21,9 +23,88 @@ if (!targetUrl) {
 }
 
 const baseUrl = targetUrl.replace(/\/$/, '');
-console.log(`🚀 开始对部署实例执行健康检查: ${baseUrl}`);
+console.log(`🚀 开始对部署实例执行生产级健康检查: ${baseUrl}`);
+
+// 辅助睡眠函数
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 1. 边缘节点就绪预热探测 (Readiness Probe)
+async function waitForEdgeReadiness(maxWaitMs = 15000, intervalMs = 1500) {
+  const startTime = Date.now();
+  console.log('⏳ [Readiness Probe] 等待 Cloudflare Anycast 边缘路由全球收敛与预热...');
+
+  let attempt = 1;
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const resp = await fetch(baseUrl, { 
+        method: 'GET',
+        signal: AbortSignal.timeout(8000)
+      });
+      if (resp.status >= 200 && resp.status < 400) {
+        console.log(`✅ [Readiness Probe] 边缘节点已收敛并正常响应 (HTTP ${resp.status}, 耗时 ${Date.now() - startTime}ms)`);
+        return true;
+      }
+      console.log(`ℹ️ [Readiness Probe] 边缘预热中 (尝试 #${attempt}, 状态码: HTTP ${resp.status})... 等待重试`);
+    } catch (err) {
+      console.log(`ℹ️ [Readiness Probe] 连接等待中 (尝试 #${attempt}, 错误: ${err.message})...`);
+    }
+    attempt++;
+    await sleep(intervalMs);
+  }
+
+  console.warn('⚠️ [Readiness Probe] 边缘预热超时 (将继续尝试执行详细冒烟测试)...');
+  return false;
+}
+
+// 2. 带重试的单项探测执行器
+async function runTestWithRetry(test, maxRetries = 3) {
+  const url = `${baseUrl}${test.path}`;
+  let lastErr = null;
+  let lastResp = null;
+  let lastDetail = '';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(url, { 
+        method: test.method || 'GET',
+        signal: AbortSignal.timeout(8000)
+      });
+      lastResp = resp;
+      const statusOk = test.expectedStatus.includes(resp.status);
+
+      let contentOk = true;
+      if (statusOk && test.validate) {
+        contentOk = await test.validate(resp);
+      }
+
+      if (statusOk && contentOk) {
+        const retryNote = attempt > 1 ? ` (重试第 ${attempt} 次成功)` : '';
+        console.log(`✅ [PASS] ${test.name} -> HTTP ${resp.status}${retryNote}`);
+        return true;
+      } else {
+        const ray = resp.headers.get('cf-ray') || 'N/A';
+        lastDetail = `HTTP ${resp.status}, CF-Ray: ${ray}`;
+      }
+    } catch (err) {
+      lastErr = err;
+      lastDetail = `网络异常: ${err.message}`;
+    }
+
+    if (attempt < maxRetries) {
+      const delay = Math.round(1500 * Math.pow(1.5, attempt - 1));
+      console.log(`   🔄 [RETRY] ${test.name}: 正在进行第 ${attempt}/${maxRetries} 次重试 (等待 ${delay}ms, 上次: ${lastDetail})...`);
+      await sleep(delay);
+    }
+  }
+
+  console.error(`❌ [FAIL] ${test.name} -> 最终失败 (${lastDetail})`);
+  return false;
+}
 
 async function runHealthCheck() {
+  // 先执行边缘预热
+  await waitForEdgeReadiness();
+
   const tests = [
     {
       name: '首页静态资源状态 (GET /)',
@@ -66,27 +147,13 @@ async function runHealthCheck() {
 
   let passed = 0;
   for (const t of tests) {
-    try {
-      const url = `${baseUrl}${t.path}`;
-      const resp = await fetch(url, { method: t.method || 'GET' });
-      const statusOk = t.expectedStatus.includes(resp.status);
-      let contentOk = true;
-      if (statusOk && t.validate) {
-        contentOk = await t.validate(resp);
-      }
-
-      if (statusOk && contentOk) {
-        console.log(`✅ [PASS] ${t.name} -> HTTP ${resp.status}`);
-        passed++;
-      } else {
-        console.error(`❌ [FAIL] ${t.name} -> HTTP ${resp.status} (校验未通过)`);
-      }
-    } catch (err) {
-      console.error(`❌ [ERROR] ${t.name} -> 请求失败: ${err.message}`);
+    const success = await runTestWithRetry(t, 4);
+    if (success) {
+      passed++;
     }
   }
 
-  console.log(`\n📊 冒烟测试结果: ${passed}/${tests.length} 通过`);
+  console.log(`\n📊 冒烟测试汇总: ${passed}/${tests.length} 项通过`);
   if (passed !== tests.length) {
     console.error('⚠️ 存在健康检查未通过项，请排查云端配置与部署状态！');
     process.exit(1);

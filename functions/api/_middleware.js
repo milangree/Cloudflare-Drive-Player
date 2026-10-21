@@ -1,4 +1,5 @@
-// 全局中间件：处理 CORS 跨域请求与捕获未捕获异常
+// API 统一中间件：处理 CORS 跨域预检与后端未捕获异常保护
+// 生效作用域：仅限 /api/* 接口调用，不影响静态资源直通 CDN 传输
 export async function onRequest(context) {
   const { request, next } = context;
 
@@ -17,7 +18,7 @@ export async function onRequest(context) {
 
   try {
     const response = await next();
-    // 为所有响应添加宽松的 CORS 标头，方便移动端或第三方嵌入
+    // 为所有 API 响应添加宽松的 CORS 标头，方便移动端或第三方嵌入
     const newHeaders = new Headers(response.headers);
     newHeaders.set("Access-Control-Allow-Origin", "*");
     newHeaders.set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Disposition");

@@ -69,5 +69,7 @@ jobs:
       - name: Post-deploy Smoke Test / Healthcheck
         if: steps.pages-deploy.outputs.deployment-url != ''
         run: |
+          echo "Waiting 5 seconds for Cloudflare Edge propagation..."
+          sleep 5
           echo "Verifying deployment at ${{ steps.pages-deploy.outputs.deployment-url }}..."
           node scripts/healthcheck.js "${{ steps.pages-deploy.outputs.deployment-url }}"

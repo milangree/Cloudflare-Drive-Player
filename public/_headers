@@ -1,0 +1,4 @@
+/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length, Content-Disposition
+  X-Content-Type-Options: nosniff

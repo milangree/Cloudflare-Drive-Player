@@ -31,23 +31,48 @@
 
 ```text
 cf-pages-drive-player/
-├── functions/
-│   ├── _middleware.js         # 全局 CORS 处理与异常捕获
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml          # GitHub Actions 自动化 CI/CD 流水线 (双阶段质量与部署门禁)
+├── docs/                      # 架构与开发者工程文档
+│   ├── api-reference.md       # 全量 API 接口参考文档与可执行示例
+│   ├── ci-cd-deployment-guide.md # CI/CD 流水线与部署运维排障手册
+│   └── adr/                   # 架构决策记录 (ADR-001 边缘路由隔离与重试策略)
+├── functions/                 # Cloudflare Pages Functions (Serverless API 边缘层)
 │   ├── api/
+│   │   ├── _middleware.js     # API 统一中间件 (CORS 跨域与全局异常保护，仅对 /api/* 生效)
 │   │   ├── info.js            # 网站信息与凭证配置检测
 │   │   ├── list.js            # 获取目录文件列表 (支持分页与模糊搜索)
 │   │   ├── stream/[id].js     # 媒体流代理核心 (HTTP 206 Range 分片透传)
-│   │   └── download/[id].js   # 文件直接下载 (RFC 5987 编码文件名)
+│   │   ├── download/[id].js   # 文件直接下载 (RFC 5987 编码文件名)
+│   │   └── admin/             # 后台管理及云盘文件全生命周期管控 API
+│   │       ├── auth.js        # 访问密码与管理员身份认证
+│   │       ├── config.js      # 站点配置读取与动态持久化更新
+│   │       └── files.js       # 在线重命名/移动/删除/新建/断点续传通道
 │   └── utils/
+│       ├── configManager.js   # 配置管理器 (KV / Drive Properties 双模自动降级)
 │       └── googleAuth.js      # 基于 Web Crypto API 的 RS256 JWT 自动生成与 Token 缓存
-├── public/
+├── public/                    # 纯静态前端资源 (100% 走 Cloudflare 边缘 CDN 直通，零开销)
 │   ├── index.html             # 现代化单页应用 (Tailwind + Lucide + Artplayer)
 │   ├── css/style.css          # 自定义滚动条与毛玻璃视觉增强
 │   ├── js/app.js              # 核心交互逻辑 (路由/播放/搜索/状态管理)
-│   └── favicon.svg
+│   ├── favicon.svg            # 站点矢量图标
+│   ├── _headers               # 静态资源全局 HTTP 响应头配置
+│   └── _routes.json           # 边缘路由隔离规则 (显式指定仅 /api/* 进入 Functions 计算)
+├── scripts/                   # 自动化运维与质量闸门脚本
+│   ├── ci-check.js            # 流水线阶段 1: JavaScript AST 语法与静态资源完整性验证
+│   └── healthcheck.js         # 流水线阶段 2: 具备 Anycast 边缘预热与指数退避的冒烟测试脚本
 ├── wrangler.toml              # Wrangler 配置文件
 └── .env.example               # 环境变量配置模板
 ```
+
+---
+
+## 📚 开发者与运维文档指南
+
+- 📖 **[完整 API 接口参考文档 (API Reference)](docs/api-reference.md)**：包含全量端点参数、状态码说明、认证流程与可直接复制执行的 `curl` 示例。
+- 🚀 **[CI/CD 流水线与部署运维指南 (Deployment & Troubleshooting)](docs/ci-cd-deployment-guide.md)**：详解 GitHub Actions 双阶段门禁、边缘 Anycast 预热机制与生产故障排查手册。
+- 🏛️ **[架构决策记录 (ADR-001)](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md)**：关于边缘路由隔离、避免静态资源 500 异常与冒烟测试重试策略的架构决策背景。
 
 ---
 
@@ -71,20 +96,31 @@ cf-pages-drive-player/
 
 ### 第二步：部署到 Cloudflare Pages
 
-你可以选择 **Git 仓库绑定部署（推荐）** 或 **Wrangler CLI 本地部署**：
+本项目支持三种部署方式：**GitHub Actions CI/CD 自动化部署（推荐）**、**Cloudflare 控制台 Git 绑定** 或 **Wrangler CLI 本地部署**：
 
-#### 方式 A：GitHub / GitLab 仓库部署（最推荐）
+#### 方式 A：GitHub Actions CI/CD 自动化部署（推荐）
 
-1. 将本项目推送到你的 GitHub 仓库。
-2. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 **Workers & Pages -> Pages**。
-3. 点击 **Connect to Git (连接到 Git)**，选择刚刚推送的仓库。
-4. 部署设置：
+本项目已内置生产级双阶段 CI/CD 流水线（`.github/workflows/ci-cd.yml`），每次推送或提 PR 时自动执行质量扫描与部署：
+1. 将代码推送到你的 GitHub 仓库。
+2. 进入 GitHub 仓库 -> **Settings -> Secrets and variables -> Actions**，配置以下两个 Repository Secrets：
+   - `CLOUDFLARE_API_TOKEN`：具备 Cloudflare Pages 编辑权限的 API Token。
+   - `CLOUDFLARE_ACCOUNT_ID`：你的 Cloudflare 账户 ID（可在控制台右侧获取）。
+3. 只要向 `main` 分支提交代码，GitHub Actions 将自动执行：
+   - **阶段 1 (质量与安全门禁)**：自动执行 `npm run test:syntax` 语法扫描与 `npm audit` 漏洞审计；
+   - **阶段 2 (自动部署与冒烟)**：通过 Wrangler 发布至 Cloudflare Pages，并自动触发指数退避的端点健康检查。
+4. 详情请参阅 **[CI/CD 流水线与部署运维指南](docs/ci-cd-deployment-guide.md)**。
+
+#### 方式 B：Cloudflare 控制台 Git 直连部署
+
+1. 打开 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 **Workers & Pages -> Pages**。
+2. 点击 **Connect to Git (连接到 Git)**，选择你的项目仓库。
+3. 部署构建设置：
    - **Framework preset (框架预设)**: `None`
-   - **Build command (构建命令)**: 留空（无需构建）
+   - **Build command (构建命令)**: 留空（无构建步骤）
    - **Build output directory (输出目录)**: `public`
-5. 点击 **Save and Deploy** 完成部署。
+4. 点击 **Save and Deploy** 完成初始化部署。
 
-#### 方式 B：使用 Wrangler CLI 一键本地部署
+#### 方式 C：使用 Wrangler CLI 本地一键部署
 
 在项目根目录下执行：
 ```bash
@@ -191,6 +227,14 @@ npm run deploy
 
 #### Q3: 为什么大视频在手机或某些浏览器中拖动进度条不会重新缓冲？
 - 本项目针对 `Range` 头进行了完整的 206 分片透传，若遇到进度条异常，请确认视频编码是否支持流式播放（推荐通用的 `H.264 / AAC` 编码的 `.mp4` 格式，WebM 亦可良好支持）。
+
+#### Q4: GitHub Actions 部署成功，但在冒烟测试时出现 HTTP 500 导致流水线报红？
+- **原因**：Cloudflare Anycast 边缘网络在全球节点分发资源时存在短暂收敛窗口，若静态资源被全局中间件拦截或探测缺乏重试，容易出现假阴性失败。
+- **解决方案**：确保项目包含 `public/_routes.json` 并将中间件放在 `functions/api/_middleware.js`，使静态资源通过边缘 CDN 直通；同时使用内置了预热与指数退避重试的 `node scripts/healthcheck.js` 脚本。完整细节请参考 [CI/CD 运维指南](docs/ci-cd-deployment-guide.md)。
+
+#### Q5: 为什么修改了 Cloudflare Pages 环境变量后，页面依然提示未配置？
+- **原因**：Cloudflare Pages 环境变量在注入现有容器时，必须重新触发一次构建或部署。
+- **解决方案**：登录 Cloudflare Dashboard -> 进入 Pages 项目 -> 切换到 **Deployments (部署)** 页面，在最新一次成功部署记录右侧点击 **「...」->「Retry deployment (重试部署)」** 即可立即生效。
 
 ---
 
