@@ -140,6 +140,8 @@ const dom = {
   streamSourceText: document.getElementById("stream-source-text"),
   mediaWrapper: document.getElementById("media-wrapper"),
   codecWarningBanner: document.getElementById("codec-warning-banner"),
+  codecWarningText: document.getElementById("codec-warning-text"),
+  bannerFallbackPreviewBtn: document.getElementById("banner-fallback-preview-btn"),
   closeCodecWarningBtn: document.getElementById("close-codec-warning-btn"),
   extPlayerMenuBtn: document.getElementById("ext-player-menu-btn"),
   extPlayerMenu: document.getElementById("ext-player-menu"),
@@ -240,31 +242,72 @@ function isPortraitMedia(item) {
   return false;
 }
 
-// 检测当前浏览器是否能原生使用内置内核播放该视频
+// 检测当前浏览器是否能原生使用内置内核播放该媒体
 function canBrowserPlayNatively(item) {
   if (!item.isVideo && !item.isAudio) return false;
   if (item.isAudio) return true; // 音频格式 (mp3, wav, flac, ogg, aac) 原生广泛支持
 
   const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
-  // 现代浏览器 <video> 无法原生解封装的容器格式
-  const unplayableContainers = ["mkv", "avi", "flv", "wmv", "rmvb", "mov", "ts", "vob", "iso"];
-  if (unplayableContainers.includes(ext)) {
+  // 现代浏览器原生完全无法解封装的传统容器格式
+  const strictlyUnplayableContainers = ["avi", "wmv", "rmvb", "vob", "iso"];
+  if (strictlyUnplayableContainers.includes(ext)) {
     return false;
   }
 
-  // 针对 HEVC/H.265 编码检查（部分系统浏览器未安装 HEVC 硬解支持）
+  const testVideo = document.createElement("video");
+
+  // 1. MKV 容器兼容性探测 (Matroska / WebM 衍生)
+  // 现代 Chromium 桌面端支持解封装部分 MKV 容器，而 WebKit / Safari 则完全不支持
+  if (ext === "mkv") {
+    const canPlayMkv = !!(
+      testVideo.canPlayType("video/x-matroska") ||
+      testVideo.canPlayType('video/x-matroska; codecs="avc1.42E01E, mp4a.40.2"') ||
+      testVideo.canPlayType('video/x-matroska; codecs="vp9, opus"')
+    );
+    if (!canPlayMkv) {
+      return false; // Safari 等不支持 MKV 容器解封装的浏览器明确判定不可播
+    }
+  }
+
+  // 2. 针对常见多声道专业音频编码检测 (DTS, TrueHD, AC3, EAC3/DDP, 杜比全景声 Atmos)
+  // 现代绝大多数浏览器未集成 DTS/AC-3 商业解码专利授权，会导致起播无声或解码中断
+  const isUnsupportedAudio = /(dts(-hd)?|truehd|ac3|eac3|ddp|atmos)/i.test(item.name);
+  if (isUnsupportedAudio) {
+    return false;
+  }
+
+  // 3. 针对 HEVC/H.265/10bit 编码检查 (需要操作系统及硬件硬解支持)
   const isHevc = /hevc|h265|x265|10bit/i.test(item.name);
   if (isHevc) {
-    const testVideo = document.createElement("video");
     const canPlayHevc = !!(
       testVideo.canPlayType('video/mp4; codecs="hevc"') ||
       testVideo.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') ||
-      testVideo.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"')
+      testVideo.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') ||
+      testVideo.canPlayType('video/x-matroska; codecs="hevc"')
     );
     if (!canPlayHevc) return false;
   }
 
   return true;
+}
+
+// 统一控制编码与兼容性降级提示条
+function showCodecWarning(message, showFallbackBtn = true) {
+  if (!dom.codecWarningBanner) return;
+  dom.codecWarningBanner.classList.remove("hidden");
+  const bannerSpan = dom.codecWarningText || dom.codecWarningBanner.querySelector("span");
+  if (bannerSpan) {
+    bannerSpan.innerHTML = message;
+  }
+  if (dom.bannerFallbackPreviewBtn) {
+    dom.bannerFallbackPreviewBtn.classList.toggle("hidden", !showFallbackBtn);
+  }
+}
+
+function hideCodecWarning() {
+  if (dom.codecWarningBanner) {
+    dom.codecWarningBanner.classList.add("hidden");
+  }
 }
 
 // 辅助工具：全局 Toast
@@ -1871,18 +1914,30 @@ function openMediaPlayer(item) {
   dom.playerFileName.title = item.name;
   dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
 
-  // 针对竖屏与横屏视频自适应调整弹窗宽高
-  const isPortrait = isPortraitMedia(item);
+  // 统一标准播放器弹窗规范：稳定剧场视口，杜绝不同视频比例导致弹窗尺寸跳变与变形
   if (dom.playerDialog) {
-    dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800", "transition-all", "duration-300");
-    if (isPortrait) {
-      dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
-      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
-    } else {
-      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
-      dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
-    }
+    dom.playerDialog.classList.remove(
+      "w-screen",
+      "h-screen",
+      "max-w-none",
+      "max-h-none",
+      "rounded-none",
+      "border-0",
+      "max-w-md",
+      "sm:max-w-lg"
+    );
+    dom.playerDialog.classList.add(
+      "w-full",
+      "max-w-6xl",
+      "h-[84vh]",
+      "max-h-[860px]",
+      "min-h-[380px]",
+      "rounded-2xl",
+      "border",
+      "border-slate-800",
+      "transition-all",
+      "duration-300"
+    );
   }
 
   const streamUrl = `${window.location.origin}/api/stream/${item.id}`;
@@ -1929,18 +1984,18 @@ function openMediaPlayer(item) {
     renderPlayerMedia(item, streamUrl);
 
     if (!canPlayNatively) {
-      dom.codecWarningBanner.classList.remove("hidden");
-      const bannerSpan = dom.codecWarningBanner.querySelector("span");
-      if (bannerSpan) {
-        bannerSpan.innerHTML =
-          "当前视频封装或编码（如部分高规格 MKV / HEVC）可能需要系统硬件解码；如遇黑屏，推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播！";
+      const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
+      let warnMsg = "当前视频编码在当前浏览器内核中可能解码受限。如遇黑屏或无声，建议点击右侧【一键切换云端转码】或使用上方外部播放器！";
+      if (ext === "mkv") {
+        warnMsg = "当前浏览器内核未原生支持此 MKV 封装或其内部音视频轨（如 AC3/DTS/HEVC）。若画面黑屏，建议点击右侧<strong>【一键切换云端转码】</strong>！";
       }
+      showCodecWarning(warnMsg, true);
     } else {
-      dom.codecWarningBanner.classList.add("hidden");
+      hideCodecWarning();
     }
   } else {
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
-    dom.codecWarningBanner.classList.add("hidden");
+    hideCodecWarning();
     renderPlayerMedia(item, streamUrl);
   }
 
@@ -1959,6 +2014,7 @@ function openMediaPlayer(item) {
 function renderGooglePreview(item) {
   destroyPlayer();
   state.isGooglePreview = true;
+  hideCodecWarning();
   const isPortrait = isPortraitMedia(item);
 
   // 解析目标分辨率，强制指定 Google 预览播放最高画质
@@ -2021,7 +2077,8 @@ function renderPlayerMedia(item, streamUrl) {
     const videoExt = (item.name.split(".").pop() || "").toLowerCase();
     const isHls = videoExt === "m3u8";
     const isFlv = videoExt === "flv";
-    const detectedType = isHls ? "m3u8" : isFlv ? "flv" : (videoExt || "mp4");
+    const isMkv = videoExt === "mkv";
+    const detectedType = isHls ? "m3u8" : isFlv ? "flv" : isMkv ? "mkv" : (videoExt || "mp4");
 
     state.playerInstance = new Artplayer({
       container: artContainer,
@@ -2090,6 +2147,18 @@ function renderPlayerMedia(item, streamUrl) {
             video.src = url;
           }
         },
+        mkv: function (video, url, art) {
+          // MKV 容器定制挂载：支持环境（Chromium 等）直接原生解封装起播
+          video.src = url;
+          if (art.option.autoplay) {
+            const playPromise = video.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+              playPromise.catch((e) => {
+                console.warn("MKV 原生播放受浏览器策略拦截:", e);
+              });
+            }
+          }
+        },
       },
     });
 
@@ -2141,30 +2210,38 @@ function renderPlayerMedia(item, streamUrl) {
       }
     });
 
-    // 播放异常提示
-    state.playerInstance.on("error", () => {
-      dom.codecWarningBanner.classList.remove("hidden");
-      const bannerSpan = dom.codecWarningBanner.querySelector("span");
-      if (bannerSpan) {
-        bannerSpan.innerHTML =
-          "当前视频画面或音频编码在当前浏览器内核下受限。推荐点击右上角使用 <strong>MPV / VLC / PotPlayer</strong> 本地极速秒播！";
-      }
-      showToast("内置内核解码受限，推荐使用右上角外部播放器");
+    // 播放异常提示与降级
+    state.playerInstance.on("error", (error) => {
+      console.warn("Artplayer 遇到播放错误:", error);
+      const isMkvVideo = videoExt === "mkv";
+      const errorMsg = isMkvVideo
+        ? "浏览器无法解码此 MKV 视频画面/音频（黑屏或容器不支持）。已为您准备好云端转码方案，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
+        : "当前视频编码在浏览器内核中解码失败（黑屏）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
+      showCodecWarning(errorMsg, true);
+      showToast("内置内核解码受限，建议切换云端转码或外部播放器");
     });
 
     // 自动挂载同名外挂字幕 (OpenList 影音体验)
     autoDetectAndAttachSubtitles(item);
   } else {
-    // 音频播放
+    // 音频播放：优雅居中卡片，杜绝空旷与变形
     dom.playerTypeIcon.setAttribute("data-lucide", "music");
-    const audio = document.createElement("audio");
-    audio.id = "active-player";
-    audio.controls = true;
-    audio.autoplay = true;
-    audio.src = streamUrl;
-    audio.className = "w-full p-4";
-    dom.mediaWrapper.appendChild(audio);
+    const audioCard = document.createElement("div");
+    audioCard.className =
+      "w-full max-w-md mx-4 p-6 sm:p-8 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl flex flex-col items-center gap-5 text-center";
+    audioCard.innerHTML = `
+      <div class="w-20 h-20 rounded-2xl bg-gradient-to-tr from-brand-600/30 to-amber-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shadow-xl shadow-brand-500/10">
+        <i data-lucide="music" class="w-10 h-10"></i>
+      </div>
+      <div class="w-full min-w-0">
+        <h3 class="text-sm sm:text-base font-semibold text-slate-100 truncate" title="${item.name}">${item.name}</h3>
+        <p class="text-xs text-slate-400 mt-1">原生无损音频直出</p>
+      </div>
+      <audio id="active-player" controls autoplay src="${streamUrl}" class="w-full mt-2"></audio>
+    `;
+    dom.mediaWrapper.appendChild(audioCard);
 
+    const audio = audioCard.querySelector("audio");
     state.playerInstance = audio;
     if (savedSpeed !== 1) {
       audio.playbackRate = savedSpeed;
@@ -2178,6 +2255,10 @@ function renderPlayerMedia(item, streamUrl) {
         playAdjacentEpisode(1);
       }
     });
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
   }
 
   updateStreamSourceUI();
@@ -2210,10 +2291,22 @@ function togglePlayerMaximize() {
 
   if (state.isPlayerMaximized) {
     // 最大化模式：纯 CSS 切换，撑满整个视口，iframe 毫秒不差平滑伸展，绝不重载视频！
-    dom.playerModal.classList.remove("p-3", "sm:p-6");
+    dom.playerModal.classList.remove("p-2", "sm:p-4", "md:p-6", "p-3", "sm:p-6");
     dom.playerModal.classList.add("p-0");
 
-    dom.playerDialog.classList.remove("max-w-6xl", "max-w-md", "sm:max-w-lg", "h-[80vh]", "h-[88vh]", "rounded-2xl", "border", "border-slate-800");
+    dom.playerDialog.classList.remove(
+      "max-w-6xl",
+      "max-w-md",
+      "sm:max-w-lg",
+      "h-[80vh]",
+      "h-[84vh]",
+      "h-[88vh]",
+      "max-h-[860px]",
+      "min-h-[380px]",
+      "rounded-2xl",
+      "border",
+      "border-slate-800"
+    );
     dom.playerDialog.classList.add("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
 
     if (previewContainer) {
@@ -2227,21 +2320,20 @@ function togglePlayerMaximize() {
       dom.playerMaximizeIcon.setAttribute("data-lucide", "minimize-2");
     }
   } else {
-    // 还原窗口模式：纯 CSS 恢复原有居中尺寸
-    dom.playerModal.classList.add("p-3", "sm:p-6");
-    dom.playerModal.classList.remove("p-0");
+    // 还原窗口模式：恢复统一标准规格
+    dom.playerModal.classList.add("p-2", "sm:p-4", "md:p-6");
+    dom.playerModal.classList.remove("p-0", "p-3", "sm:p-6");
 
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("rounded-2xl", "border", "border-slate-800");
-
-    const isPortrait = isPortraitMedia(state.activeMediaItem);
-    if (isPortrait) {
-      dom.playerDialog.classList.remove("max-w-6xl", "h-[80vh]");
-      dom.playerDialog.classList.add("max-w-md", "sm:max-w-lg", "h-[88vh]");
-    } else {
-      dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]");
-      dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]");
-    }
+    dom.playerDialog.classList.add(
+      "max-w-6xl",
+      "h-[84vh]",
+      "max-h-[860px]",
+      "min-h-[380px]",
+      "rounded-2xl",
+      "border",
+      "border-slate-800"
+    );
 
     if (previewContainer) {
       previewContainer.classList.add("rounded-b-2xl");
@@ -2269,7 +2361,7 @@ function closePlayer() {
   // 重置最大化状态
   if (state.isPlayerMaximized) {
     state.isPlayerMaximized = false;
-    dom.playerModal.classList.add("p-3", "sm:p-6");
+    dom.playerModal.classList.add("p-2", "sm:p-4", "md:p-6");
     dom.playerModal.classList.remove("p-0");
     dom.playerDialog.classList.remove("w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
     if (dom.playerMaximizeIcon) {
@@ -2278,8 +2370,29 @@ function closePlayer() {
   }
 
   if (dom.playerDialog) {
-    dom.playerDialog.classList.remove("max-w-md", "sm:max-w-lg", "h-[88vh]", "w-screen", "h-screen", "max-w-none", "max-h-none", "rounded-none", "border-0");
-    dom.playerDialog.classList.add("max-w-6xl", "h-[80vh]", "rounded-2xl", "border", "border-slate-800", "transition-all", "duration-300");
+    dom.playerDialog.classList.remove(
+      "max-w-md",
+      "sm:max-w-lg",
+      "h-[80vh]",
+      "h-[88vh]",
+      "w-screen",
+      "h-screen",
+      "max-w-none",
+      "max-h-none",
+      "rounded-none",
+      "border-0"
+    );
+    dom.playerDialog.classList.add(
+      "max-w-6xl",
+      "h-[84vh]",
+      "max-h-[860px]",
+      "min-h-[380px]",
+      "rounded-2xl",
+      "border",
+      "border-slate-800",
+      "transition-all",
+      "duration-300"
+    );
   }
   if (dom.streamSourceToggleBtn) {
     dom.streamSourceToggleBtn.classList.add("hidden");
@@ -2292,6 +2405,7 @@ function closePlayer() {
 }
 
 function destroyPlayer() {
+  hideCodecWarning();
   if (resumeBannerTimer) {
     clearTimeout(resumeBannerTimer);
     resumeBannerTimer = null;
@@ -2450,7 +2564,17 @@ function setupEventListeners() {
   // 关闭编码兼容提示条
   if (dom.closeCodecWarningBtn) {
     dom.closeCodecWarningBtn.addEventListener("click", () => {
-      dom.codecWarningBanner.classList.add("hidden");
+      hideCodecWarning();
+    });
+  }
+
+  // 提示条中一键切换云端转码预览降级
+  if (dom.bannerFallbackPreviewBtn) {
+    dom.bannerFallbackPreviewBtn.addEventListener("click", () => {
+      if (state.activeMediaItem) {
+        showToast("正在为您切换为 Google 云端转码预览播放...");
+        renderGooglePreview(state.activeMediaItem);
+      }
     });
   }
 

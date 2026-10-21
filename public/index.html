@@ -172,7 +172,7 @@
 
   <!-- 视频/音频播放模态窗口 (Modal) -->
   <div id="player-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 transition-all">
-    <div id="player-dialog" class="relative w-full max-w-6xl h-[88vh] sm:h-[82vh] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col transition-all duration-300">
+    <div id="player-dialog" class="relative w-full max-w-6xl h-[84vh] max-h-[860px] min-h-[380px] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col transition-all duration-300">
       <!-- 播放器顶部条 (响应式多断点自适应排版) -->
       <div id="player-header" class="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-800/80 bg-slate-900/95 select-none cursor-default gap-1.5 sm:gap-3">
         <!-- 标题行 (独立自适应，保证任意长度文件名完整展现) -->
@@ -346,14 +346,20 @@
       </div>
 
       <!-- MKV / 编码兼容提示条 -->
-      <div id="codec-warning-banner" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-300 flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2 min-w-0">
+      <div id="codec-warning-banner" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-3 sm:px-4 py-2 text-xs text-amber-300 flex items-center justify-between gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
           <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0 text-amber-400"></i>
-          <span>当前视频浏览器原生内核无法解码播放，已自动为你切换为 Google 云端预览。推荐点击右上方图标唤起 <strong>MPV / ExoPlayer / PotPlayer</strong> 本地硬件秒播！</span>
+          <span id="codec-warning-text" class="leading-relaxed">当前视频浏览器原生内核无法解码播放。</span>
         </div>
-        <button id="close-codec-warning-btn" class="p-1 text-amber-400/80 hover:text-amber-200 hover:bg-amber-500/20 rounded transition-colors flex-shrink-0" title="关闭提示">
-          <i data-lucide="x" class="w-3.5 h-3.5"></i>
-        </button>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button type="button" id="banner-fallback-preview-btn" class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[11px] font-medium text-amber-200 transition-colors flex items-center gap-1 cursor-pointer" title="点击立即调用 Google 云端转码无障碍播放">
+            <i data-lucide="play-circle" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>一键切换云端转码</span>
+          </button>
+          <button type="button" id="close-codec-warning-btn" class="p-1 text-amber-400/80 hover:text-amber-200 hover:bg-amber-500/20 rounded transition-colors flex-shrink-0" title="关闭提示">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
       </div>
 
       <!-- 媒体挂载容器 -->

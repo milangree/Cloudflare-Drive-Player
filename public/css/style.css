@@ -52,13 +52,26 @@
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
 
-/* Artplayer 播放器与画幅适配 (OpenList 播放技术栈) */
+/* Artplayer 播放器与画幅适配 (统一标准容器与无损黑边自适应规范) */
 .art-video-player {
   width: 100% !important;
   height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   border-radius: 0 0 1rem 1rem !important;
   background: #000 !important;
   font-family: inherit !important;
+}
+
+#artplayer-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 #media-wrapper {
@@ -73,10 +86,15 @@
   background: #000;
 }
 
-#media-wrapper video {
+#media-wrapper video,
+.art-video-player .art-video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain !important; /* 100% 保持视频原生比例，保证 4K 无损画幅完整呈现 */
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important; /* 核心规范：100% 保持原生宽高比，任何分辨率/画幅均保持无损黑边自适应 */
+  margin: auto !important;
+  background: #000 !important;
 }
 
 /* Artplayer 字幕渲染美化 (对齐 OpenList 影音体验) */
