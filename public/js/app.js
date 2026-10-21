@@ -26,6 +26,8 @@ const state = {
   accessToken: localStorage.getItem("access_token") || "",
   adminToken: localStorage.getItem("admin_token") || "",
   isAdmin: false,
+  // 批量操作多选状态 (Set 存储当前已选 item.id)
+  selectedItemIds: new Set(),
 };
 
 // DOM 元素引用
@@ -49,6 +51,7 @@ const dom = {
   gridView: document.getElementById("grid-view"),
   listView: document.getElementById("list-view"),
   listTbody: document.getElementById("list-tbody"),
+  selectAllCheckbox: document.getElementById("select-all-checkbox"),
   emptyState: document.getElementById("empty-state"),
   // 访问密码模态框
   sitePasswordModal: document.getElementById("site-password-modal"),
@@ -72,7 +75,7 @@ const dom = {
   cfgAccessPassword: document.getElementById("cfg-access-password"),
   cfgNewAdminPassword: document.getElementById("cfg-new-admin-password"),
   adminLogoutBtn: document.getElementById("admin-logout-btn"),
-  // 文件操作模态框
+  // 单个文件操作模态框 (保留用于单项重命名/移动)
   fileActionModal: document.getElementById("file-action-modal"),
   fileActionTitle: document.getElementById("file-action-title"),
   fileActionDesc: document.getElementById("file-action-desc"),
@@ -80,31 +83,45 @@ const dom = {
   fileActionInput: document.getElementById("file-action-input"),
   cancelFileActionBtn: document.getElementById("cancel-file-action-btn"),
   confirmFileActionBtn: document.getElementById("confirm-file-action-btn"),
-  // 管理员浮动 + 号操作按钮与菜单 (FAB)
-  adminFabContainer: document.getElementById("admin-fab-container"),
-  adminFabToggleBtn: document.getElementById("admin-fab-toggle-btn"),
-  adminFabMenu: document.getElementById("admin-fab-menu"),
-  fabUploadBtn: document.getElementById("fab-upload-btn"),
-  fabNewFolderBtn: document.getElementById("fab-new-folder-btn"),
-  fabNewFileBtn: document.getElementById("fab-new-file-btn"),
-  adminFileInput: document.getElementById("admin-file-input"),
-  // 新建文件模态框
-  newFileModal: document.getElementById("new-file-modal"),
-  closeNewFileModalBtn: document.getElementById("close-new-file-modal-btn"),
-  newFileForm: document.getElementById("new-file-form"),
-  newFileNameInput: document.getElementById("new-file-name-input"),
-  newFileContentInput: document.getElementById("new-file-content-input"),
-  cancelNewFileBtn: document.getElementById("cancel-new-file-btn"),
-  confirmNewFileBtn: document.getElementById("confirm-new-file-btn"),
-  // 上传进度模态框
-  uploadProgressModal: document.getElementById("upload-progress-modal"),
-  uploadStatusBadge: document.getElementById("upload-status-badge"),
-  uploadFilename: document.getElementById("upload-filename"),
-  uploadPercentage: document.getElementById("upload-percentage"),
-  uploadProgressBar: document.getElementById("upload-progress-bar"),
-  uploadBytesInfo: document.getElementById("upload-bytes-info"),
-  uploadSpeedInfo: document.getElementById("upload-speed-info"),
-  abortUploadBtn: document.getElementById("abort-upload-btn"),
+  // 批量操作底吸浮动工具栏与模态框
+  batchActionBar: document.getElementById("batch-action-bar"),
+  batchSelectedCount: document.getElementById("batch-selected-count"),
+  batchClearSelectionBtn: document.getElementById("batch-clear-selection-btn"),
+  batchRenameTriggerBtn: document.getElementById("batch-rename-trigger-btn"),
+  batchMoveTriggerBtn: document.getElementById("batch-move-trigger-btn"),
+  batchDeleteTriggerBtn: document.getElementById("batch-delete-trigger-btn"),
+  // 批量重命名模态框
+  batchRenameModal: document.getElementById("batch-rename-modal"),
+  closeBatchRenameBtn: document.getElementById("close-batch-rename-btn"),
+  cancelBatchRenameBtn: document.getElementById("cancel-batch-rename-btn"),
+  batchRenameForm: document.getElementById("batch-rename-form"),
+  batchRenameTabReplace: document.getElementById("batch-rename-tab-replace"),
+  batchRenameTabAffix: document.getElementById("batch-rename-tab-affix"),
+  batchRenameTabSequence: document.getElementById("batch-rename-tab-sequence"),
+  batchRenamePanelReplace: document.getElementById("batch-rename-panel-replace"),
+  batchRenamePanelAffix: document.getElementById("batch-rename-panel-affix"),
+  batchRenamePanelSequence: document.getElementById("batch-rename-panel-sequence"),
+  batchReplaceFindInput: document.getElementById("batch-replace-find-input"),
+  batchReplaceToInput: document.getElementById("batch-replace-to-input"),
+  batchPrefixInput: document.getElementById("batch-prefix-input"),
+  batchSuffixInput: document.getElementById("batch-suffix-input"),
+  batchSeqBaseInput: document.getElementById("batch-seq-base-input"),
+  batchSeqStartInput: document.getElementById("batch-seq-start-input"),
+  batchSeqDigitsInput: document.getElementById("batch-seq-digits-input"),
+  batchRenamePreview: document.getElementById("batch-rename-preview"),
+  // 批量移动模态框
+  batchMoveModal: document.getElementById("batch-move-modal"),
+  closeBatchMoveBtn: document.getElementById("close-batch-move-btn"),
+  cancelBatchMoveBtn: document.getElementById("cancel-batch-move-btn"),
+  batchMoveForm: document.getElementById("batch-move-form"),
+  batchMoveDesc: document.getElementById("batch-move-desc"),
+  batchMoveQuickSelect: document.getElementById("batch-move-quick-select"),
+  batchMoveFolderIdInput: document.getElementById("batch-move-folder-id-input"),
+  // 批量删除模态框
+  batchDeleteModal: document.getElementById("batch-delete-modal"),
+  cancelBatchDeleteBtn: document.getElementById("cancel-batch-delete-btn"),
+  confirmBatchDeleteBtn: document.getElementById("confirm-batch-delete-btn"),
+  batchDeleteCountTip: document.getElementById("batch-delete-count-tip"),
   // 播放器模态框
   playerModal: document.getElementById("player-modal"),
   playerDialog: document.getElementById("player-dialog"),
@@ -357,43 +374,140 @@ async function checkSystemInfo() {
   }
 }
 
-// 更新管理员特权 UI 状态（显隐右下角浮动 + 号主按钮）
+// 更新管理员特权 UI 状态与批量操作栏
 function updateAdminUIState() {
   const hasAdmin = Boolean(state.adminToken);
   state.isAdmin = hasAdmin;
-  if (dom.adminFabContainer) {
-    if (hasAdmin) {
-      dom.adminFabContainer.classList.remove("hidden");
-      dom.adminFabContainer.classList.add("flex");
+  updateBatchActionBar();
+}
+
+// 批量操作：多选状态管理与底部工具栏联动
+function updateBatchActionBar() {
+  if (!dom.batchActionBar) return;
+  const count = state.selectedItemIds.size;
+
+  if (count > 0 && state.isAdmin) {
+    if (dom.batchSelectedCount) {
+      dom.batchSelectedCount.textContent = `已选 ${count} 项`;
+    }
+    dom.batchActionBar.classList.remove("translate-y-24", "opacity-0", "pointer-events-none");
+    dom.batchActionBar.classList.add("translate-y-0", "opacity-100", "pointer-events-auto");
+  } else {
+    dom.batchActionBar.classList.add("translate-y-24", "opacity-0", "pointer-events-none");
+    dom.batchActionBar.classList.remove("translate-y-0", "opacity-100", "pointer-events-auto");
+  }
+
+  // 同步更新全选复选框的状态 (根据当前可见页项)
+  if (dom.selectAllCheckbox) {
+    const visibleSelectable = getCurrentlyVisibleItems();
+    if (visibleSelectable.length === 0) {
+      dom.selectAllCheckbox.checked = false;
+      dom.selectAllCheckbox.indeterminate = false;
     } else {
-      dom.adminFabContainer.classList.add("hidden");
-      dom.adminFabContainer.classList.remove("flex");
-      closeFabMenu();
+      const allChecked = visibleSelectable.every((i) => state.selectedItemIds.has(i.id));
+      const someChecked = visibleSelectable.some((i) => state.selectedItemIds.has(i.id));
+      dom.selectAllCheckbox.checked = allChecked;
+      dom.selectAllCheckbox.indeterminate = !allChecked && someChecked;
     }
   }
 }
 
-// 展开/收起浮动操作菜单
-function toggleFabMenu() {
-  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
-  const isOpen = dom.adminFabMenu.classList.contains("fab-menu-open");
-  if (isOpen) {
-    closeFabMenu();
-  } else {
-    openFabMenu();
+// 获取当前页可见的项目列表
+function getCurrentlyVisibleItems() {
+  if (state.pageSize === "all") {
+    return state.filteredItems || [];
   }
+  const size = typeof state.pageSize === "number" ? state.pageSize : 30;
+  const startIdx = (state.currentPage - 1) * size;
+  return (state.filteredItems || []).slice(startIdx, startIdx + size);
 }
 
-function openFabMenu() {
-  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
-  dom.adminFabMenu.classList.add("fab-menu-open");
-  dom.adminFabToggleBtn.classList.add("fab-active");
+// 切换单项选择状态
+function toggleSelectItem(id, forceValue) {
+  if (typeof forceValue === "boolean") {
+    if (forceValue) state.selectedItemIds.add(id);
+    else state.selectedItemIds.delete(id);
+  } else {
+    if (state.selectedItemIds.has(id)) {
+      state.selectedItemIds.delete(id);
+    } else {
+      state.selectedItemIds.add(id);
+    }
+  }
+  syncSelectionVisuals();
+  updateBatchActionBar();
 }
 
-function closeFabMenu() {
-  if (!dom.adminFabMenu || !dom.adminFabToggleBtn) return;
-  dom.adminFabMenu.classList.remove("fab-menu-open");
-  dom.adminFabToggleBtn.classList.remove("fab-active");
+// 全选/全不选当前页项目
+function toggleSelectAllCurrentPage(forceChecked) {
+  const visible = getCurrentlyVisibleItems();
+  const shouldSelect = typeof forceChecked === "boolean" ? forceChecked : !visible.every((i) => state.selectedItemIds.has(i.id));
+  visible.forEach((i) => {
+    if (shouldSelect) state.selectedItemIds.add(i.id);
+    else state.selectedItemIds.delete(i.id);
+  });
+  syncSelectionVisuals();
+  updateBatchActionBar();
+}
+
+// 清空全部已选
+function clearAllSelection() {
+  state.selectedItemIds.clear();
+  syncSelectionVisuals();
+  updateBatchActionBar();
+}
+
+// 同步列表行和网格卡片的选中样式与复选框勾选状态
+function syncSelectionVisuals() {
+  // 列表行
+  document.querySelectorAll(".file-row").forEach((row) => {
+    const id = row.getAttribute("data-id");
+    const isSelected = state.selectedItemIds.has(id);
+    row.classList.toggle("item-selected-row", isSelected);
+    const cb = row.querySelector(".item-select-checkbox");
+    if (cb) cb.checked = isSelected;
+  });
+
+  // 网格卡片
+  document.querySelectorAll(".glass-card").forEach((card) => {
+    const id = card.getAttribute("data-id");
+    const isSelected = state.selectedItemIds.has(id);
+    card.classList.toggle("item-selected-card", isSelected);
+    const cb = card.querySelector(".item-select-checkbox");
+    if (cb) cb.checked = isSelected;
+  });
+}
+
+// 获取已选项目完整数据对象数组
+function getSelectedItemsData() {
+  return state.items.filter((item) => state.selectedItemIds.has(item.id));
+}
+
+// 前端受控并发执行池 (带 Concurrency Limit 与失败搜集，保障 Cloudflare Functions 与 Google Drive 零限流)
+async function runConcurrentBatch(items, limit, workerFn) {
+  const results = [];
+  let index = 0;
+
+  async function next() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      const item = items[currentIndex];
+      try {
+        const res = await workerFn(item, currentIndex);
+        results[currentIndex] = { success: true, item, res };
+      } catch (err) {
+        results[currentIndex] = { success: false, item, error: err.message || String(err) };
+      }
+    }
+  }
+
+  const workers = [];
+  const actualLimit = Math.min(limit, items.length);
+  for (let i = 0; i < actualLimit; i++) {
+    workers.push(next());
+  }
+  await Promise.all(workers);
+  return results;
 }
 
 // 打开/切换后台管理窗口
@@ -492,133 +606,336 @@ function closeFileActionModal() {
   currentFileAction = {};
 }
 
-// 打开新建文本/代码文件模态框
-function openNewFileModal() {
-  dom.newFileNameInput.value = "";
-  dom.newFileContentInput.value = "";
-  dom.newFileModal.classList.remove("hidden");
-  dom.newFileModal.classList.add("flex");
-  setTimeout(() => dom.newFileNameInput.focus(), 100);
-}
+// 当前活跃的批量重命名 Tab: "replace" | "affix" | "sequence"
+let currentBatchRenameTab = "replace";
 
-function closeNewFileModal() {
-  dom.newFileModal.classList.add("hidden");
-  dom.newFileModal.classList.remove("flex");
-}
+// 打开批量重命名模态框
+function openBatchRenameModal() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) {
+    showToast("请先勾选需要重命名的文件或文件夹");
+    return;
+  }
+  setBatchRenameTab("replace");
+  if (dom.batchReplaceFindInput) dom.batchReplaceFindInput.value = "";
+  if (dom.batchReplaceToInput) dom.batchReplaceToInput.value = "";
+  if (dom.batchPrefixInput) dom.batchPrefixInput.value = "";
+  if (dom.batchSuffixInput) dom.batchSuffixInput.value = "";
+  if (dom.batchSeqBaseInput) dom.batchSeqBaseInput.value = "Item";
+  if (dom.batchSeqStartInput) dom.batchSeqStartInput.value = "1";
+  if (dom.batchSeqDigitsInput) dom.batchSeqDigitsInput.value = "2";
 
-// 当前活跃的上传控制器（支持取消上传）
-let activeUploadXhr = null;
+  updateBatchRenamePreview();
 
-// 显示/关闭上传进度框
-function showUploadProgress(show, filename = "") {
-  if (show) {
-    dom.uploadFilename.textContent = filename;
-    dom.uploadPercentage.textContent = "0%";
-    dom.uploadProgressBar.style.width = "0%";
-    dom.uploadBytesInfo.textContent = "准备上传...";
-    dom.uploadSpeedInfo.textContent = "-- KB/s";
-    dom.uploadStatusBadge.textContent = "上传中";
-    dom.uploadStatusBadge.className = "text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 font-mono";
-    dom.uploadProgressModal.classList.remove("hidden");
-    dom.uploadProgressModal.classList.add("flex");
-  } else {
-    dom.uploadProgressModal.classList.add("hidden");
-    dom.uploadProgressModal.classList.remove("flex");
-    activeUploadXhr = null;
+  if (dom.batchRenameModal) {
+    dom.batchRenameModal.classList.remove("hidden");
+    dom.batchRenameModal.classList.add("flex");
+    setTimeout(() => {
+      if (dom.batchReplaceFindInput) dom.batchReplaceFindInput.focus();
+    }, 100);
   }
 }
 
-// 执行文件上传（支持任意大小大文件、断点续传/流式直传 Google Drive、实时显示进度与网速）
-async function uploadFileToDrive(file) {
-  if (!file) return;
+function closeBatchRenameModal() {
+  if (dom.batchRenameModal) {
+    dom.batchRenameModal.classList.add("hidden");
+    dom.batchRenameModal.classList.remove("flex");
+  }
+}
 
-  try {
-    showUploadProgress(true, file.name);
+// 切换批量重命名 Tab
+function setBatchRenameTab(tab) {
+  currentBatchRenameTab = tab;
+  const tabs = [
+    { id: "replace", btn: dom.batchRenameTabReplace, panel: dom.batchRenamePanelReplace },
+    { id: "affix", btn: dom.batchRenameTabAffix, panel: dom.batchRenamePanelAffix },
+    { id: "sequence", btn: dom.batchRenameTabSequence, panel: dom.batchRenamePanelSequence },
+  ];
 
-    // 步骤 1：向后端申请针对该文件的 Google Drive 专属 Resumable Upload 临时通道
-    const initRes = await fetch("/api/admin/files", {
+  tabs.forEach((t) => {
+    if (!t.btn || !t.panel) return;
+    if (t.id === tab) {
+      t.btn.className = "py-1.5 rounded-lg bg-brand-500 text-white text-center transition-colors";
+      t.panel.classList.remove("hidden");
+    } else {
+      t.btn.className = "py-1.5 rounded-lg text-slate-400 hover:text-white text-center transition-colors";
+      t.panel.classList.add("hidden");
+    }
+  });
+
+  updateBatchRenamePreview();
+}
+
+// 计算单个文件在当前批量规则下的新名称
+function computeNewItemName(originalName, index) {
+  if (!originalName) return originalName;
+
+  // 分离扩展名 (文件夹不拆分扩展名)
+  const isDotFile = originalName.startsWith(".") && !originalName.slice(1).includes(".");
+  const dotIndex = originalName.lastIndexOf(".");
+  let baseName = originalName;
+  let ext = "";
+  if (dotIndex > 0 && !isDotFile) {
+    baseName = originalName.slice(0, dotIndex);
+    ext = originalName.slice(dotIndex); // 如 ".mp4"
+  }
+
+  if (currentBatchRenameTab === "replace") {
+    const findStr = dom.batchReplaceFindInput ? dom.batchReplaceFindInput.value : "";
+    const toStr = dom.batchReplaceToInput ? dom.batchReplaceToInput.value : "";
+    if (!findStr) return originalName;
+    // 采用全局字符替换 (兼容特殊字符，不用裸正则避免转义错误)
+    return originalName.split(findStr).join(toStr);
+  }
+
+  if (currentBatchRenameTab === "affix") {
+    const prefix = dom.batchPrefixInput ? dom.batchPrefixInput.value : "";
+    const suffix = dom.batchSuffixInput ? dom.batchSuffixInput.value : "";
+    return `${prefix}${baseName}${suffix}${ext}`;
+  }
+
+  if (currentBatchRenameTab === "sequence") {
+    const customBase = dom.batchSeqBaseInput ? dom.batchSeqBaseInput.value.trim() : "";
+    const startNum = dom.batchSeqStartInput ? parseInt(dom.batchSeqStartInput.value, 10) || 1 : 1;
+    const digits = dom.batchSeqDigitsInput ? parseInt(dom.batchSeqDigitsInput.value, 10) || 2 : 2;
+    const seqStr = String(startNum + index).padStart(digits, "0");
+    const namePrefix = customBase || baseName;
+    return `${namePrefix}_${seqStr}${ext}`;
+  }
+
+  return originalName;
+}
+
+// 实时渲染前 3~5 项重命名预览
+function updateBatchRenamePreview() {
+  if (!dom.batchRenamePreview) return;
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) {
+    dom.batchRenamePreview.innerHTML = `<span class="text-slate-500">未选择任何项目</span>`;
+    return;
+  }
+
+  const sample = selected.slice(0, 4);
+  const rows = sample.map((item, idx) => {
+    const newName = computeNewItemName(item.name, idx);
+    const isChanged = newName !== item.name;
+    return `
+      <div class="flex items-center gap-1.5 truncate">
+        <span class="text-slate-500 flex-shrink-0">${idx + 1}.</span>
+        <span class="text-slate-400 truncate max-w-[140px]">${item.name}</span>
+        <span class="text-slate-600 flex-shrink-0">→</span>
+        <span class="${isChanged ? "text-brand-400 font-semibold" : "text-slate-500"} truncate">${newName}</span>
+      </div>
+    `;
+  });
+
+  if (selected.length > 4) {
+    rows.push(`<div class="text-[10px] text-slate-500 pt-1">...及其他 ${selected.length - 4} 个项目</div>`);
+  }
+
+  dom.batchRenamePreview.innerHTML = rows.join("");
+}
+
+// 提交批量重命名
+async function submitBatchRename() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) return;
+
+  // 预判计算所有新名称
+  const plan = selected.map((item, idx) => ({
+    item,
+    newName: computeNewItemName(item.name, idx),
+  })).filter((p) => p.newName && p.newName !== p.item.name);
+
+  if (plan.length === 0) {
+    showToast("新旧文件名一致，无需修改");
+    return;
+  }
+
+  closeBatchRenameModal();
+  showToast(`正在批量重命名 ${plan.length} 个项目...`);
+
+  // 并发限制 3，避免触发 Google Drive 429 速率限制
+  const results = await runConcurrentBatch(plan, 3, async (task) => {
+    const res = await fetch("/api/admin/files", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${state.adminToken}`,
       },
       body: JSON.stringify({
-        action: "init_resumable_upload",
-        name: file.name,
-        parentFolderId: state.currentFolderId || "root",
-        mimeType: file.type || "application/octet-stream",
-        fileSize: file.size,
+        action: "rename",
+        fileId: task.item.id,
+        shortcutId: task.item.shortcutId || "",
+        newName: task.newName,
       }),
     });
-
-    const initData = await initRes.json();
-    if (!initData.success || !initData.uploadUrl) {
-      throw new Error(initData.error || "未能获取 Google Drive 上传通道");
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "重命名失败");
     }
+    return data;
+  });
 
-    const uploadUrl = initData.uploadUrl;
-    let lastLoaded = 0;
-    let lastTime = Date.now();
+  const successCount = results.filter((r) => r.success).length;
+  const failCount = results.length - successCount;
 
-    // 步骤 2：直接将文件二进制流通过 XMLHttpRequest 泵入 Google Drive 上传通道
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      activeUploadXhr = xhr;
+  if (failCount === 0) {
+    showToast(`批量重命名完成：成功 ${successCount} 项`);
+  } else {
+    showToast(`批量重命名完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+  }
 
-      xhr.open("PUT", uploadUrl, true);
-      // Google Resumable Upload 协议标准头部
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+  clearAllSelection();
+  await loadFolder(state.currentFolderId);
+}
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          dom.uploadPercentage.textContent = `${percent}%`;
-          dom.uploadProgressBar.style.width = `${percent}%`;
+// 打开批量移动模态框
+function openBatchMoveModal() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) {
+    showToast("请先勾选需要移动的文件或文件夹");
+    return;
+  }
 
-          // 计算即时传输速度
-          const now = Date.now();
-          const elapsed = (now - lastTime) / 1000;
-          if (elapsed >= 0.5) {
-            const bytesPerSec = (e.loaded - lastLoaded) / elapsed;
-            dom.uploadSpeedInfo.textContent = `${formatBytes(bytesPerSec)}/s`;
-            lastLoaded = e.loaded;
-            lastTime = now;
-          }
+  if (dom.batchMoveDesc) {
+    dom.batchMoveDesc.textContent = `将选中的 ${selected.length} 个项目移动到指定 Google Drive 文件夹`;
+  }
+  if (dom.batchMoveFolderIdInput) dom.batchMoveFolderIdInput.value = "";
+  if (dom.batchMoveQuickSelect) dom.batchMoveQuickSelect.value = "";
 
-          dom.uploadBytesInfo.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          dom.uploadStatusBadge.textContent = "上传成功";
-          dom.uploadStatusBadge.className = "text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono";
-          dom.uploadPercentage.textContent = "100%";
-          dom.uploadProgressBar.style.width = "100%";
-          resolve();
-        } else {
-          reject(new Error(`上传失败，Google Drive 状态码: ${xhr.status}`));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error("网络传输异常，上传中断"));
-      xhr.onabort = () => reject(new Error("用户取消了上传"));
-
-      xhr.send(file);
-    });
-
-    showToast(`文件 "${file.name}" 上传成功！`);
+  if (dom.batchMoveModal) {
+    dom.batchMoveModal.classList.remove("hidden");
+    dom.batchMoveModal.classList.add("flex");
     setTimeout(() => {
-      showUploadProgress(false);
-      loadFolder(state.currentFolderId);
-    }, 600);
-  } catch (err) {
-    showToast(`上传异常: ${err.message}`);
-    showUploadProgress(false);
+      if (dom.batchMoveFolderIdInput) dom.batchMoveFolderIdInput.focus();
+    }, 100);
   }
 }
 
-// 执行文件/文件夹操作（重命名、移动、删除）
+function closeBatchMoveModal() {
+  if (dom.batchMoveModal) {
+    dom.batchMoveModal.classList.add("hidden");
+    dom.batchMoveModal.classList.remove("flex");
+  }
+}
+
+// 提交批量移动
+async function submitBatchMove() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) return;
+
+  const targetFolderId = dom.batchMoveFolderIdInput ? dom.batchMoveFolderIdInput.value.trim() : "";
+  if (!targetFolderId) {
+    showToast("请输入或选择目标文件夹 ID");
+    return;
+  }
+
+  closeBatchMoveModal();
+  showToast(`正在批量移动 ${selected.length} 个项目...`);
+
+  const results = await runConcurrentBatch(selected, 3, async (item) => {
+    const res = await fetch("/api/admin/files", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.adminToken}`,
+      },
+      body: JSON.stringify({
+        action: "move",
+        fileId: item.id,
+        shortcutId: item.shortcutId || "",
+        targetFolderId,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "移动失败");
+    }
+    return data;
+  });
+
+  const successCount = results.filter((r) => r.success).length;
+  const failCount = results.length - successCount;
+
+  if (failCount === 0) {
+    showToast(`批量移动完成：成功 ${successCount} 项`);
+  } else {
+    showToast(`批量移动完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+  }
+
+  clearAllSelection();
+  await loadFolder(state.currentFolderId);
+}
+
+// 打开批量删除确认模态框
+function openBatchDeleteModal() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) {
+    showToast("请先勾选需要删除的文件或文件夹");
+    return;
+  }
+
+  if (dom.batchDeleteCountTip) {
+    dom.batchDeleteCountTip.textContent = `已选 ${selected.length} 个项目，移入回收站后可在 30 天内找回`;
+  }
+
+  if (dom.batchDeleteModal) {
+    dom.batchDeleteModal.classList.remove("hidden");
+    dom.batchDeleteModal.classList.add("flex");
+  }
+}
+
+function closeBatchDeleteModal() {
+  if (dom.batchDeleteModal) {
+    dom.batchDeleteModal.classList.add("hidden");
+    dom.batchDeleteModal.classList.remove("flex");
+  }
+}
+
+// 提交批量删除 (安全移入回收站 trashed: true)
+async function submitBatchDelete() {
+  const selected = getSelectedItemsData();
+  if (selected.length === 0) return;
+
+  closeBatchDeleteModal();
+  showToast(`正在将 ${selected.length} 个项目移入回收站...`);
+
+  const results = await runConcurrentBatch(selected, 3, async (item) => {
+    const res = await fetch("/api/admin/files", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.adminToken}`,
+      },
+      body: JSON.stringify({
+        action: "delete",
+        fileId: item.id,
+        shortcutId: item.shortcutId || "",
+        permanent: false, // 遵循安全规范：默认软删除移入回收站
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "删除失败");
+    }
+    return data;
+  });
+
+  const successCount = results.filter((r) => r.success).length;
+  const failCount = results.length - successCount;
+
+  if (failCount === 0) {
+    showToast(`已成功将 ${successCount} 项移入回收站`);
+  } else {
+    showToast(`移入回收站完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+  }
+
+  clearAllSelection();
+  await loadFolder(state.currentFolderId);
+}
+
+// 执行文件/文件夹操作（单项重命名、移动、删除）
 async function executeFileOperation(payload) {
   try {
     showToast("正在执行操作...");
@@ -658,6 +975,7 @@ function closeSitePasswordModal() {
 // 加载指定文件夹内容
 async function loadFolder(folderId, searchKeyword = "") {
   showLoading(true);
+  clearAllSelection();
   state.currentPage = 1;
   try {
     let url = `/api/list?folderId=${encodeURIComponent(folderId)}&_t=${Date.now()}`;
@@ -911,6 +1229,7 @@ function renderGridView(items) {
       const thumbUrl = getHighResThumb(item, 640);
       const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
       const resBadge = getVideoResolution(item);
+      const isSelected = selectedItemIds.has(item.id);
 
       // 缩略图海报区域 (视频或图片)
       let mediaPosterHtml = "";
@@ -950,7 +1269,11 @@ function renderGridView(items) {
       }
 
       return `
-        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group relative" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group relative transition-all duration-200 ${isSelected ? "item-selected-card" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+          <!-- 勾选复选框 (左上角高优先级层级) -->
+          <div class="absolute top-2 left-2 z-20">
+            <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900/90 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
+          </div>
           ${!mediaPosterHtml && resBadge ? `<span class="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-black tracking-widest uppercase">${resBadge}</span>` : ""}
           <div>
             ${
@@ -1052,9 +1375,13 @@ function renderListView(items) {
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 120);
+      const isSelected = selectedItemIds.has(item.id);
 
       return `
-        <tr class="file-row group" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+        <tr class="file-row group transition-colors ${isSelected ? "item-selected-row" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+          <td class="w-10 px-3 py-2.5 text-center">
+            <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
+          </td>
           <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
             ${
               thumbUrl && (item.isVideo || item.isImage)
@@ -1154,6 +1481,20 @@ function triggerFileDownload(item) {
 
 // 绑定卡片与列表行点击事件
 function bindItemEvents(container) {
+  // 0. 复选框勾选事件：阻止冒泡并切换单项选中状态
+  container.querySelectorAll(".item-checkbox").forEach((cb) => {
+    cb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = cb.getAttribute("data-id");
+      toggleSelectItem(id, cb.checked);
+    });
+    cb.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const id = cb.getAttribute("data-id");
+      toggleSelectItem(id, cb.checked);
+    });
+  });
+
   // 1. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
   container.querySelectorAll(".folder-enter-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
@@ -2992,96 +3333,117 @@ function setupEventListeners() {
     dom.cancelFileActionBtn.addEventListener("click", closeFileActionModal);
   }
 
-  // 管理员浮动 + 号 (FAB) 操作与菜单事件绑定
-  if (dom.adminFabToggleBtn) {
-    dom.adminFabToggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleFabMenu();
+  // ==================== 批量操作事件绑定 ====================
+  // 全选 / 反选复选框 (表头)
+  if (dom.selectAllCheckbox) {
+    dom.selectAllCheckbox.addEventListener("change", (e) => {
+      toggleSelectAllCurrentPage(e.target.checked);
     });
   }
 
-  // 点击页面任意其它区域自动收起浮动菜单
-  document.addEventListener("click", (e) => {
-    if (dom.adminFabContainer && !dom.adminFabContainer.contains(e.target)) {
-      closeFabMenu();
+  // 清空选中
+  if (dom.batchClearSelectionBtn) {
+    dom.batchClearSelectionBtn.addEventListener("click", () => {
+      clearAllSelection();
+    });
+  }
+
+  // 触发批量重命名模态框
+  if (dom.batchRenameTriggerBtn) {
+    dom.batchRenameTriggerBtn.addEventListener("click", () => {
+      openBatchRenameModal();
+    });
+  }
+
+  // 触发批量移动模态框
+  if (dom.batchMoveTriggerBtn) {
+    dom.batchMoveTriggerBtn.addEventListener("click", () => {
+      openBatchMoveModal();
+    });
+  }
+
+  // 触发批量删除模态框
+  if (dom.batchDeleteTriggerBtn) {
+    dom.batchDeleteTriggerBtn.addEventListener("click", () => {
+      openBatchDeleteModal();
+    });
+  }
+
+  // 批量重命名：关闭与取消
+  if (dom.closeBatchRenameBtn) {
+    dom.closeBatchRenameBtn.addEventListener("click", closeBatchRenameModal);
+  }
+  if (dom.cancelBatchRenameBtn) {
+    dom.cancelBatchRenameBtn.addEventListener("click", closeBatchRenameModal);
+  }
+
+  // 批量重命名：Tab 切换
+  if (dom.batchRenameTabReplace) {
+    dom.batchRenameTabReplace.addEventListener("click", () => setBatchRenameTab("replace"));
+  }
+  if (dom.batchRenameTabAffix) {
+    dom.batchRenameTabAffix.addEventListener("click", () => setBatchRenameTab("affix"));
+  }
+  if (dom.batchRenameTabSequence) {
+    dom.batchRenameTabSequence.addEventListener("click", () => setBatchRenameTab("sequence"));
+  }
+
+  // 批量重命名：各输入项实时触发预览更新
+  const batchInputs = [
+    dom.batchReplaceFindInput,
+    dom.batchReplaceToInput,
+    dom.batchPrefixInput,
+    dom.batchSuffixInput,
+    dom.batchSeqBaseInput,
+    dom.batchSeqStartInput,
+    dom.batchSeqDigitsInput,
+  ];
+  batchInputs.forEach((inputEl) => {
+    if (inputEl) {
+      inputEl.addEventListener("input", updateBatchRenamePreview);
     }
   });
 
-  if (dom.fabNewFolderBtn) {
-    dom.fabNewFolderBtn.addEventListener("click", () => {
-      closeFabMenu();
-      openFileActionModal({
-        action: "create_folder",
-        title: "新建文件夹",
-        desc: "将在当前目录下创建一个新的文件夹",
-        defaultValue: "",
-        placeholder: "请输入文件夹名称",
-      });
-    });
-  }
-
-  if (dom.fabNewFileBtn) {
-    dom.fabNewFileBtn.addEventListener("click", () => {
-      closeFabMenu();
-      openNewFileModal();
-    });
-  }
-
-  if (dom.fabUploadBtn && dom.adminFileInput) {
-    dom.fabUploadBtn.addEventListener("click", () => {
-      closeFabMenu();
-      dom.adminFileInput.value = "";
-      dom.adminFileInput.click();
-    });
-  }
-
-  if (dom.adminFileInput) {
-    dom.adminFileInput.addEventListener("change", async (e) => {
-      const files = Array.from(e.target.files || []);
-      if (!files.length) return;
-
-      // 支持顺序依次上传选择的文件
-      for (let i = 0; i < files.length; i++) {
-        await uploadFileToDrive(files[i]);
-      }
-    });
-  }
-
-  if (dom.closeNewFileModalBtn) {
-    dom.closeNewFileModalBtn.addEventListener("click", closeNewFileModal);
-  }
-  if (dom.cancelNewFileBtn) {
-    dom.cancelNewFileBtn.addEventListener("click", closeNewFileModal);
-  }
-
-  if (dom.newFileForm) {
-    dom.newFileForm.addEventListener("submit", async (e) => {
+  // 批量重命名：表单提交
+  if (dom.batchRenameForm) {
+    dom.batchRenameForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const fileName = dom.newFileNameInput.value.trim();
-      const fileContent = dom.newFileContentInput.value;
-      if (!fileName) {
-        showToast("文件名不能为空");
-        return;
-      }
-
-      await executeFileOperation({
-        action: "create_file",
-        name: fileName,
-        content: fileContent,
-        parentFolderId: state.currentFolderId,
-      });
-
-      closeNewFileModal();
+      submitBatchRename();
     });
   }
 
-  if (dom.abortUploadBtn) {
-    dom.abortUploadBtn.addEventListener("click", () => {
-      if (activeUploadXhr) {
-        activeUploadXhr.abort();
-        showToast("已取消上传");
-        showUploadProgress(false);
+  // 批量移动：关闭与取消
+  if (dom.closeBatchMoveBtn) {
+    dom.closeBatchMoveBtn.addEventListener("click", closeBatchMoveModal);
+  }
+  if (dom.cancelBatchMoveBtn) {
+    dom.cancelBatchMoveBtn.addEventListener("click", closeBatchMoveModal);
+  }
+
+  // 批量移动：快捷下拉目标选择
+  if (dom.batchMoveQuickSelect && dom.batchMoveFolderIdInput) {
+    dom.batchMoveQuickSelect.addEventListener("change", (e) => {
+      if (e.target.value) {
+        dom.batchMoveFolderIdInput.value = e.target.value;
       }
+    });
+  }
+
+  // 批量移动：表单提交
+  if (dom.batchMoveForm) {
+    dom.batchMoveForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submitBatchMove();
+    });
+  }
+
+  // 批量删除：取消与确认
+  if (dom.cancelBatchDeleteBtn) {
+    dom.cancelBatchDeleteBtn.addEventListener("click", closeBatchDeleteModal);
+  }
+  if (dom.confirmBatchDeleteBtn) {
+    dom.confirmBatchDeleteBtn.addEventListener("click", () => {
+      submitBatchDelete();
     });
   }
 

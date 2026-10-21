@@ -139,6 +139,9 @@
       <table class="w-full text-left text-sm text-slate-300">
         <thead class="bg-slate-900/90 text-xs uppercase text-slate-400 border-b border-slate-800">
           <tr>
+            <th scope="col" class="w-10 px-3 py-3 text-center">
+              <input type="checkbox" id="select-all-checkbox" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-brand-500 focus:ring-0 focus:ring-offset-0 cursor-pointer" title="全选 / 反选" />
+            </th>
             <th scope="col" class="px-4 py-3 font-semibold">文件名</th>
             <th scope="col" class="px-4 py-3 font-semibold hidden md:table-cell">大小</th>
             <th scope="col" class="px-4 py-3 font-semibold hidden sm:table-cell">修改时间</th>
@@ -536,139 +539,209 @@
     </div>
   </div>
 
-  <!-- 新建文本文件模态框 -->
-  <div id="new-file-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
-    <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-2xl flex flex-col max-h-[90vh]">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+  <!-- 批量操作模态框：批量重命名 (支持 查找替换 / 添加前后缀 / 递增序号) -->
+  <div id="batch-rename-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
+    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i data-lucide="file-plus" class="w-4 h-4 text-sky-400"></i>
-          <span>新建文件</span>
+          <i data-lucide="edit-3" class="w-4 h-4 text-brand-400"></i>
+          <span>批量重命名</span>
         </h3>
-        <button id="close-new-file-modal-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+        <button id="close-batch-rename-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <form id="new-file-form" class="space-y-4 pt-4 flex-1 flex flex-col min-h-0">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">文件名称 (含扩展名，如 note.txt, readme.md, data.json)</label>
-          <input 
-            type="text" 
-            id="new-file-name-input" 
-            placeholder="例如: note.txt" 
-            required 
-            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500"
-          />
+      <!-- 模式选择 Tab -->
+      <div class="grid grid-cols-3 gap-1 p-1 bg-slate-950 rounded-xl mb-4 text-xs font-medium">
+        <button type="button" id="batch-rename-tab-replace" class="py-1.5 rounded-lg bg-brand-500 text-white text-center transition-colors">查找替换</button>
+        <button type="button" id="batch-rename-tab-affix" class="py-1.5 rounded-lg text-slate-400 hover:text-white text-center transition-colors">添加前后缀</button>
+        <button type="button" id="batch-rename-tab-sequence" class="py-1.5 rounded-lg text-slate-400 hover:text-white text-center transition-colors">递增序号</button>
+      </div>
+
+      <form id="batch-rename-form" class="space-y-3.5">
+        <!-- 模式 1: 查找替换 -->
+        <div id="batch-rename-panel-replace" class="space-y-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">查找内容</label>
+            <input type="text" id="batch-replace-find-input" placeholder="例如: [HD]" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">替换为 (留空则为删除匹配文本)</label>
+            <input type="text" id="batch-replace-to-input" placeholder="例如: [1080P] 或 留空" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
         </div>
 
-        <div class="flex-1 flex flex-col min-h-[160px]">
-          <label class="block text-xs text-slate-400 mb-1">文件初始内容 (支持纯文本/Markdown/代码)</label>
-          <textarea 
-            id="new-file-content-input" 
-            placeholder="输入文件初始内容..."
-            class="w-full flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 resize-none"
-          ></textarea>
+        <!-- 模式 2: 添加前后缀 -->
+        <div id="batch-rename-panel-affix" class="space-y-3 hidden">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">前缀 (加在文件名前)</label>
+            <input type="text" id="batch-prefix-input" placeholder="例如: [动漫] " class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">后缀 (加在扩展名前)</label>
+            <input type="text" id="batch-suffix-input" placeholder="例如: _v2" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-          <button type="button" id="cancel-new-file-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+        <!-- 模式 3: 递增序号 -->
+        <div id="batch-rename-panel-sequence" class="space-y-3 hidden">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">基础文件名</label>
+            <input type="text" id="batch-seq-base-input" placeholder="例如: Episode" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">起始序号</label>
+              <input type="number" id="batch-seq-start-input" value="1" min="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">序号位数 (补零)</label>
+              <input type="number" id="batch-seq-digits-input" value="2" min="1" max="5" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 实时重命名效果预览 -->
+        <div class="pt-2">
+          <label class="block text-xs text-slate-400 mb-1">效果预览 (前 3 项示例)</label>
+          <div id="batch-rename-preview" class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] space-y-1 font-mono text-slate-300 max-h-24 overflow-y-auto">
+            <!-- 动态生成预览 -->
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+          <button type="button" id="cancel-batch-rename-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
             取消
           </button>
-          <button type="submit" id="confirm-new-file-btn" class="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold transition-colors">
-            创建文件
+          <button type="submit" id="confirm-batch-rename-btn" class="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold transition-colors">
+            确认重命名
           </button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- 上传进度浮层 / 模态框 -->
-  <div id="upload-progress-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
-    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+  <!-- 批量操作模态框：批量移动 (可选择根目录或输入目标文件夹 ID) -->
+  <div id="batch-move-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i data-lucide="upload-cloud" class="w-4 h-4 text-brand-400 animate-pulse"></i>
-          <span>文件上传中...</span>
+          <i data-lucide="folder-input" class="w-4 h-4 text-indigo-400"></i>
+          <span>批量移动</span>
         </h3>
-        <span id="upload-status-badge" class="text-[10px] px-2 py-0.5 rounded bg-brand-500/20 text-brand-400 font-mono">准备中</span>
+        <button id="close-batch-move-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
       </div>
 
-      <div class="space-y-3">
-        <div class="flex items-center justify-between text-xs">
-          <span id="upload-filename" class="font-medium text-slate-200 truncate max-w-[240px]">filename.mp4</span>
-          <span id="upload-percentage" class="text-slate-400 font-mono">0%</span>
+      <p class="text-xs text-slate-400 mb-3" id="batch-move-desc">移动已选项目到目标文件夹</p>
+
+      <form id="batch-move-form" class="space-y-3.5">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">快捷目标</label>
+          <select id="batch-move-quick-select" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 mb-2">
+            <option value="">-- 选择快捷目录或手动输入 --</option>
+            <option value="root">云盘根目录 (Root)</option>
+          </select>
         </div>
 
-        <!-- 进度条轨道 -->
-        <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-          <div id="upload-progress-bar" class="h-full bg-gradient-to-r from-brand-500 to-emerald-400 rounded-full transition-all duration-150" style="width: 0%"></div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">目标文件夹 ID (Google Drive Folder ID)</label>
+          <input 
+            type="text" 
+            id="batch-move-folder-id-input" 
+            placeholder="例如: 1AbCdEfGhIjKlMnOpQrStUvWxYz" 
+            required 
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 font-mono"
+          />
         </div>
 
-        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-          <span id="upload-bytes-info">0 B / 0 B</span>
-          <span id="upload-speed-info">-- KB/s</span>
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+          <button type="button" id="cancel-batch-move-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+            取消
+          </button>
+          <button type="submit" id="confirm-batch-move-btn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors">
+            确认移动
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 批量删除防误删确认模态框 (默认移入回收站安全兜底) -->
+  <div id="batch-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-rose-900/50 rounded-2xl p-5 shadow-2xl">
+      <div class="flex items-center gap-3 pb-3 border-b border-slate-800 mb-3">
+        <div class="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white">批量删除确认</h3>
+          <p class="text-xs text-slate-400" id="batch-delete-count-tip">确认要删除选中的项目吗？</p>
         </div>
       </div>
 
-      <div class="pt-4 mt-2 border-t border-slate-800/80 flex justify-end">
-        <button type="button" id="abort-upload-btn" class="px-3.5 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors">
-          取消上传
+      <div class="p-3 bg-rose-950/20 border border-rose-500/20 rounded-xl text-xs text-rose-300/90 leading-relaxed mb-4">
+        选中的文件和文件夹将默认<strong>移入 Google Drive 回收站</strong>，可在 30 天内通过云盘废纸篓找回恢复。
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" id="cancel-batch-delete-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+          取消
+        </button>
+        <button type="button" id="confirm-batch-delete-btn" class="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors shadow-lg shadow-rose-600/30">
+          移入回收站
         </button>
       </div>
     </div>
   </div>
 
-  <!-- 页面右下角管理员专属浮动操作按钮 (FAB - OpenList 风格精致微质感) -->
-  <div id="admin-fab-container" class="fixed right-6 bottom-6 z-40 hidden flex-col items-end gap-3 select-none">
-    <!-- 展开的操作菜单项 -->
-    <div id="admin-fab-menu" class="hidden flex-col items-end gap-2.5 transition-all duration-200 opacity-0 translate-y-3 pointer-events-none">
-      <!-- 1. 上传文件 -->
-      <button 
-        id="fab-upload-btn" 
-        class="flex items-center gap-2.5 pl-3.5 pr-2.5 py-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 hover:border-brand-500/60 text-slate-100 hover:text-white shadow-2xl hover:shadow-brand-500/20 transition-all text-xs font-medium group active:scale-95"
-        title="上传文件到当前目录"
-      >
-        <span class="text-slate-300 group-hover:text-white transition-colors font-medium">上传文件</span>
-        <div class="w-7 h-7 rounded-xl bg-brand-500/15 text-brand-400 flex items-center justify-center group-hover:bg-brand-500 group-hover:text-white group-hover:rotate-6 transition-all duration-200">
-          <i data-lucide="upload-cloud" class="w-4 h-4"></i>
-        </div>
-      </button>
-
-      <!-- 2. 新建文件夹 -->
-      <button 
-        id="fab-new-folder-btn" 
-        class="flex items-center gap-2.5 pl-3.5 pr-2.5 py-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 hover:border-amber-400/60 text-slate-100 hover:text-white shadow-2xl hover:shadow-amber-500/20 transition-all text-xs font-medium group active:scale-95"
-        title="新建文件夹"
-      >
-        <span class="text-slate-300 group-hover:text-white transition-colors font-medium">新建文件夹</span>
-        <div class="w-7 h-7 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white group-hover:rotate-6 transition-all duration-200">
-          <i data-lucide="folder-plus" class="w-4 h-4"></i>
-        </div>
-      </button>
-
-      <!-- 3. 新建文件 -->
-      <button 
-        id="fab-new-file-btn" 
-        class="flex items-center gap-2.5 pl-3.5 pr-2.5 py-2 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 hover:border-sky-400/60 text-slate-100 hover:text-white shadow-2xl hover:shadow-sky-500/20 transition-all text-xs font-medium group active:scale-95"
-        title="新建文本/代码文件"
-      >
-        <span class="text-slate-300 group-hover:text-white transition-colors font-medium">新建文件</span>
-        <div class="w-7 h-7 rounded-xl bg-sky-500/15 text-sky-400 flex items-center justify-center group-hover:bg-sky-500 group-hover:text-white group-hover:rotate-6 transition-all duration-200">
-          <i data-lucide="file-plus" class="w-4 h-4"></i>
-        </div>
+  <!-- 浮动批量操作栏 (Floating Batch Action Bar - 选中项目时底部浮现) -->
+  <div 
+    id="batch-action-bar" 
+    class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 transform translate-y-24 opacity-0 pointer-events-none flex items-center gap-2 sm:gap-3 px-3.5 sm:px-5 py-2.5 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl shadow-black/60 select-none text-xs"
+  >
+    <div class="flex items-center gap-2 pr-2 border-r border-slate-700/80">
+      <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold font-mono text-[11px]" id="batch-selected-count">
+        已选 0 项
+      </span>
+      <button type="button" id="batch-clear-selection-btn" class="text-slate-400 hover:text-white text-xs transition-colors p-1" title="取消选择">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
       </button>
     </div>
 
-    <!-- 隐藏的文件选择器 -->
-    <input type="file" id="admin-file-input" class="hidden" multiple />
-
-    <!-- 核心浮动主按钮（+号 / ×号，OpenList 质感） -->
+    <!-- 批量重命名 -->
     <button 
-      id="admin-fab-toggle-btn" 
-      class="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-500 to-indigo-500 hover:from-brand-500 hover:to-indigo-400 text-white shadow-2xl shadow-brand-500/35 flex items-center justify-center transition-all duration-300 transform hover:scale-105 active:scale-95 focus:outline-none ring-4 ring-brand-500/20 cursor-pointer"
-      title="新建与上传"
+      type="button" 
+      id="batch-rename-trigger-btn" 
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition-colors cursor-pointer"
+      title="批量重命名"
     >
-      <i data-lucide="plus" id="admin-fab-icon" class="w-6 h-6 transition-transform duration-300"></i>
+      <i data-lucide="edit-3" class="w-3.5 h-3.5 text-brand-400"></i>
+      <span class="hidden sm:inline">批量重命名</span>
+    </button>
+
+    <!-- 批量移动 -->
+    <button 
+      type="button" 
+      id="batch-move-trigger-btn" 
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition-colors cursor-pointer"
+      title="批量移动到目录"
+    >
+      <i data-lucide="folder-input" class="w-3.5 h-3.5 text-indigo-400"></i>
+      <span class="hidden sm:inline">批量移动</span>
+    </button>
+
+    <!-- 批量删除 -->
+    <button 
+      type="button" 
+      id="batch-delete-trigger-btn" 
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 font-medium border border-rose-500/30 transition-colors cursor-pointer"
+      title="批量移入回收站"
+    >
+      <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-400"></i>
+      <span class="hidden sm:inline">批量删除</span>
     </button>
   </div>
 
