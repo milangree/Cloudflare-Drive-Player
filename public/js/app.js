@@ -1229,7 +1229,7 @@ function renderGridView(items) {
       const thumbUrl = getHighResThumb(item, 640);
       const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
       const resBadge = getVideoResolution(item);
-      const isSelected = selectedItemIds.has(item.id);
+      const isSelected = state.selectedItemIds.has(item.id);
 
       // 缩略图海报区域 (视频或图片)
       let mediaPosterHtml = "";
@@ -1375,7 +1375,7 @@ function renderListView(items) {
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 120);
-      const isSelected = selectedItemIds.has(item.id);
+      const isSelected = state.selectedItemIds.has(item.id);
 
       return `
         <tr class="file-row group transition-colors ${isSelected ? "item-selected-row" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
@@ -3472,9 +3472,6 @@ async function init() {
     dom.viewIcon.setAttribute("data-lucide", "list");
   }
   await checkSystemInfo();
-  if (state.currentDrive) {
-    await loadFolder(state.currentDrive.id);
-  }
 }
 
 document.addEventListener("DOMContentLoaded", init);
