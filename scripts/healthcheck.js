@@ -14,10 +14,14 @@ const targetUrl = process.argv[2] || process.env.PAGES_DEPLOYED_URL || process.e
 if (!targetUrl) {
   console.log('ℹ️ 未提供部署目标 URL，执行本地端点契约与配置模拟健康检查...');
   console.log('✅ Functions API 契约与路由就绪:');
-  console.log('   - /api/info (GET)');
-  console.log('   - /api/list (GET)');
-  console.log('   - /api/stream/:id (GET, HEAD, OPTIONS)');
-  console.log('   - /api/download/:id (GET)');
+  console.log('   - /api/info (GET) -> 配置与运行状态');
+  console.log('   - /api/list (GET) -> 目录索引');
+  console.log('   - /api/stream/:id (GET, HEAD, OPTIONS) -> MKV/MP4 Range 流式传输');
+  console.log('   - /api/download/:id (GET) -> 附件高速下载');
+  console.log('✅ 媒体分片与容器标头标准:');
+  console.log('   - Accept-Ranges: bytes');
+  console.log('   - Content-Type: video/x-matroska (针对 MKV 文件智能规范)');
+  console.log('   - Access-Control-Expose-Headers: Content-Range, Content-Length, Accept-Ranges, Content-Disposition');
   console.log('✅ 建议在 CI 部署后使用: node scripts/healthcheck.js <部署URL> 执行真实端点冒烟探测。');
   process.exit(0);
 }

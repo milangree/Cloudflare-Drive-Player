@@ -257,7 +257,8 @@ function canBrowserPlayNatively(item) {
   const testVideo = document.createElement("video");
 
   // 1. MKV 容器兼容性探测 (Matroska / WebM 衍生)
-  // 现代 Chromium 桌面端支持解封装部分 MKV 容器，而 WebKit / Safari 则完全不支持
+  // 现代 Chromium 桌面端仅能直接解封装严格遵循 WebM 兼容子集或特定组合的 MKV 容器
+  // 而 WebKit / Safari 等完全不支持任何 video/x-matroska
   if (ext === "mkv") {
     const canPlayMkv = !!(
       testVideo.canPlayType("video/x-matroska") ||
@@ -270,14 +271,14 @@ function canBrowserPlayNatively(item) {
   }
 
   // 2. 针对常见多声道专业音频编码检测 (DTS, TrueHD, AC3, EAC3/DDP, 杜比全景声 Atmos)
-  // 现代绝大多数浏览器未集成 DTS/AC-3 商业解码专利授权，会导致起播无声或解码中断
+  // 现代绝大多数 PC 浏览器未集成 DTS/AC-3 商业解码专利授权，会导致起播无声或解码挂起
   const isUnsupportedAudio = /(dts(-hd)?|truehd|ac3|eac3|ddp|atmos)/i.test(item.name);
   if (isUnsupportedAudio) {
     return false;
   }
 
-  // 3. 针对 HEVC/H.265/10bit 编码检查 (需要操作系统及硬件硬解支持)
-  const isHevc = /hevc|h265|x265|10bit/i.test(item.name);
+  // 3. 针对 HEVC/H.265/10bit 编码检查 (需要操作系统及硬件硬解支持与 HEVC 扩展)
+  const isHevc = /(hevc|h\.?265|x265|10bit|hdr|main10)/i.test(item.name);
   if (isHevc) {
     const canPlayHevc = !!(
       testVideo.canPlayType('video/mp4; codecs="hevc"') ||
@@ -1590,6 +1591,40 @@ function formatDuration(sec) {
 
 let resumeBannerTimer = null;
 let blackScreenWatchdog = null;
+let blackScreenQuickTimer = null;
+
+/**
+ * 校验 HTML5 Video 元素真实渲染帧与画面状态
+ * 精确解决 PC Chrome 播放 MKV (HEVC/H.265) 时出现的“有声音走动但无画面/黑屏”问题
+ * @param {HTMLVideoElement} video
+ * @returns {{hasDimensions: boolean, hasFrames: boolean, hasVideo: boolean}}
+ */
+function checkVideoRenderStatus(video) {
+  if (!video) return { hasDimensions: false, hasFrames: false, hasVideo: false };
+
+  // 1. 物理尺寸检测 (视频像素宽高必须大于 0)
+  const hasDimensions = Boolean(video.videoWidth > 0 && video.videoHeight > 0);
+
+  // 2. 视频帧解码流水线检测 (Chrome / Chromium 原生标准与非标准接口双重校验)
+  let frames = null;
+  if (typeof video.getVideoPlaybackQuality === "function") {
+    try {
+      const quality = video.getVideoPlaybackQuality();
+      if (quality && typeof quality.totalVideoFrames === "number") {
+        frames = quality.totalVideoFrames;
+      }
+    } catch (_) {}
+  }
+  if (frames === null && typeof video.webkitDecodedFrameCount === "number") {
+    frames = video.webkitDecodedFrameCount;
+  }
+
+  // 若能获取解码帧统计，必须大于 0；若环境不支持统计，则以尺寸为主
+  const hasFrames = frames === null ? hasDimensions : frames > 0;
+  const hasVideo = hasDimensions && hasFrames;
+
+  return { hasDimensions, hasFrames, hasVideo };
+}
 
 /**
  * 启动解码异常与黑屏看门狗 (针对 MKV 容器、AC3/DTS 音频、HEVC 10bit 硬解受限的主动探测)
@@ -1601,6 +1636,10 @@ function startMediaWatchdog(item, art) {
     clearTimeout(blackScreenWatchdog);
     blackScreenWatchdog = null;
   }
+  if (blackScreenQuickTimer) {
+    clearTimeout(blackScreenQuickTimer);
+    blackScreenQuickTimer = null;
+  }
 
   const ext = (item.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase();
   const isMkv = ext === "mkv";
@@ -1609,12 +1648,12 @@ function startMediaWatchdog(item, art) {
   // 1. 若静态兼容性探测已知不支持，立即弹出高可见度通知与降级提示条
   if (!nativePlayable) {
     const hasAc3Dts = /(dts(-hd)?|truehd|ac3|eac3|ddp|atmos)/i.test(item.name);
-    const hasHevc = /hevc|h265|x265|10bit/i.test(item.name);
+    const hasHevc = /(hevc|h\.?265|x265|10bit|hdr|main10)/i.test(item.name);
     let reason = "当前浏览器不支持 MKV 容器原生解封装";
     if (hasAc3Dts) {
       reason = "视频包含 AC3/DTS/杜比音频轨，浏览器缺少商业解码授权";
     } else if (hasHevc) {
-      reason = "视频为 HEVC/H.265 编码，当前环境缺少硬件硬解支持";
+      reason = "视频为 HEVC/H.265 编码，当前 PC Chrome 环境缺少硬件硬解或系统 HEVC 扩展支持";
     }
 
     const tip = `${reason}。如遇黑屏或无声，建议点击右侧<strong>【一键切换云端转码】</strong>或调用外部播放器秒播！`;
@@ -1627,38 +1666,73 @@ function startMediaWatchdog(item, art) {
     }
   }
 
-  // 2. 动态看门狗探测：在起播后 5 秒内，若视频处于播放状态但无像素画面（videoWidth === 0）或解码卡死
-  blackScreenWatchdog = setTimeout(() => {
-    if (!art || !art.video) return;
+  // 辅助判定：分析视频是否已陷入“黑屏无画面/卡死”状态
+  const checkBlackScreen = (isFinalCheck = false) => {
+    if (!art || !art.video) return false;
     const video = art.video;
-    const isStalledOrBlack =
-      video.error ||
-      (video.readyState < 2 && !video.paused) ||
-      (video.currentTime === 0 && !video.paused && video.videoWidth === 0);
+    const renderStatus = checkVideoRenderStatus(video);
+
+    // 核心判定场景：
+    // A. 视频报错：video.error
+    // B. 音频在正常推进 (currentTime > 0.3 且未暂停)，但完全无画面 (renderStatus.hasVideo === false) —— 经典的 PC Chrome MKV 黑屏有声音！
+    // C. 播放状态但已卡死挂起 (未暂停、currentTime 未增加或等于 0 且 readyState < 2)
+    const isAudioOnlyOrBlack = !video.paused && video.currentTime > 0.3 && !renderStatus.hasVideo;
+    const isStalled = !video.paused && video.currentTime === 0 && video.readyState < 2;
+    const isErrored = Boolean(video.error);
+
+    const isStalledOrBlack = isErrored || isAudioOnlyOrBlack || (isFinalCheck && isStalled);
 
     if (isStalledOrBlack) {
-      console.warn("Watchdog 探测到视频解码卡死或黑屏:", item.name);
+      console.warn("Watchdog 探测到视频解码卡死或黑屏/仅音频状态:", {
+        name: item.name,
+        currentTime: video.currentTime,
+        videoWidth: video.videoWidth,
+        renderStatus,
+        isAudioOnlyOrBlack,
+        isStalled,
+      });
+
       const alertMsg = isMkv
-        ? "浏览器无法解码此 MKV 画面或音频（黑屏/无声）。已为您准备好云端转码方案，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
-        : "当前视频解码失败（黑屏）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
+        ? "检测到浏览器无法解码此 MKV 画面（黑屏/只有声音或容器不支持）。已为您准备好云端转码，点击右侧<strong>【一键切换云端转码】</strong>即可流畅起播！"
+        : "当前视频画面解码失败（黑屏/仅音频）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！";
       showCodecWarning(alertMsg, true);
       if (art.notice) {
-        art.notice.show = "画面解码受阻（黑屏），建议点击顶部一键切换云端转码";
+        art.notice.show = "画面解码受阻（黑屏/无画面），建议点击顶部一键切换云端转码";
       }
+      return true;
     }
+    return false;
+  };
+
+  // 2. 动态看门狗探测：
+  // 阶段一：起播后 2.5 秒执行快速灵敏侦测 (快速捕获“只有声音但屏幕黑屏”的状态)
+  blackScreenQuickTimer = setTimeout(() => {
+    checkBlackScreen(false);
+  }, 2500);
+
+  // 阶段二：起播后 5 秒执行全面兜底侦测
+  blackScreenWatchdog = setTimeout(() => {
+    checkBlackScreen(true);
   }, 5000);
 
-  // 3. 正常出画面时（video.videoWidth > 0 且 currentTime > 0.5），清除看门狗并隐藏警告（如果静态判定为可播放）
+  // 3. 正常出画面时（renderStatus.hasVideo === true 且 currentTime > 0.5），清除看门狗并隐藏警告（如果静态判定为可播放）
   const onTimeUpdate = () => {
-    if (art && art.video && art.video.currentTime > 0.5 && art.video.videoWidth > 0) {
-      if (blackScreenWatchdog) {
-        clearTimeout(blackScreenWatchdog);
-        blackScreenWatchdog = null;
+    if (art && art.video) {
+      const renderStatus = checkVideoRenderStatus(art.video);
+      if (art.video.currentTime > 0.5 && renderStatus.hasVideo) {
+        if (blackScreenWatchdog) {
+          clearTimeout(blackScreenWatchdog);
+          blackScreenWatchdog = null;
+        }
+        if (blackScreenQuickTimer) {
+          clearTimeout(blackScreenQuickTimer);
+          blackScreenQuickTimer = null;
+        }
+        if (nativePlayable) {
+          hideCodecWarning();
+        }
+        art.off("video:timeupdate", onTimeUpdate);
       }
-      if (nativePlayable) {
-        hideCodecWarning();
-      }
-      art.off("video:timeupdate", onTimeUpdate);
     }
   };
   art.on("video:timeupdate", onTimeUpdate);
@@ -2206,8 +2280,23 @@ function renderPlayerMedia(item, streamUrl) {
           }
         },
         mkv: function (video, url, art) {
-          // MKV 容器定制挂载：支持环境直接原生解封装起播
+          // MKV 容器定制挂载：支持环境直接原生解封装起播，并挂载解码失败降级监听
           video.src = url;
+          const onMkvError = () => {
+            console.warn("MKV 原生底层解码失败，触发云端转码引导");
+            showCodecWarning(
+              "当前浏览器无法解码此 MKV 画面（容器或编码受限）。建议点击右侧<strong>【一键切换云端转码】</strong>或使用外部播放器秒播！",
+              true
+            );
+            if (art.notice) {
+              art.notice.show = "MKV 原生解码受阻，请点击顶部一键切换云端转码";
+            }
+          };
+          video.addEventListener("error", onMkvError, { once: true });
+          art.on("destroy", () => {
+            video.removeEventListener("error", onMkvError);
+          });
+
           if (art.option.autoplay) {
             const playPromise = video.play();
             if (playPromise && typeof playPromise.catch === "function") {
@@ -2478,6 +2567,10 @@ function destroyPlayer() {
   if (blackScreenWatchdog) {
     clearTimeout(blackScreenWatchdog);
     blackScreenWatchdog = null;
+  }
+  if (blackScreenQuickTimer) {
+    clearTimeout(blackScreenQuickTimer);
+    blackScreenQuickTimer = null;
   }
   if (resumeBannerTimer) {
     clearTimeout(resumeBannerTimer);

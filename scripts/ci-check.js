@@ -32,7 +32,7 @@ function getFiles(dir, exts = ['.js']) {
 }
 
 // 2. 检查所有 JS 文件语法有效性 (利用 node --check)
-console.log('\n🔍 [步骤 1/3] 执行 JavaScript 语法与 AST 解析校验...');
+console.log('\n🔍 [步骤 1/4] 执行 JavaScript 语法与 AST 解析校验...');
 const jsFiles = [...getFiles(FUNCTIONS_DIR), ...getFiles(join(PUBLIC_DIR, 'js'))];
 let syntaxPassed = 0;
 for (const file of jsFiles) {
@@ -48,7 +48,7 @@ for (const file of jsFiles) {
 console.log(`✅ 已完成 ${syntaxPassed} 个 JavaScript 文件的语法验证，0 错误。`);
 
 // 3. 检查静态资源完整性 (HTML、CSS、JS 依赖引用及路由/标头规范)
-console.log('\n🔍 [步骤 2/3] 验证 public 静态资源完整性与路由配置...');
+console.log('\n🔍 [步骤 2/4] 验证 public 静态资源完整性与路由配置...');
 const requiredAssets = [
   join(PUBLIC_DIR, 'index.html'),
   join(PUBLIC_DIR, 'css', 'style.css'),
@@ -87,13 +87,41 @@ try {
 }
 
 // 4. 校验 Cloudflare 部署配置 (wrangler.toml)
-console.log('\n🔍 [步骤 3/3] 验证 wrangler.toml 配置文件...');
+console.log('\n🔍 [步骤 3/4] 验证 wrangler.toml 配置文件...');
 const wranglerPath = join(ROOT_DIR, 'wrangler.toml');
 try {
   const stat = statSync(wranglerPath);
   console.log(`✅ wrangler.toml 配置文件正常存在 (${stat.size} bytes)。`);
 } catch (err) {
   console.error('❌ wrangler.toml 配置文件不存在');
+  process.exit(1);
+}
+
+// 5. 校验流媒体服务契约与标头规范 (保障 MKV 及 Range 分片传输)
+console.log('\n🔍 [步骤 4/4] 校验流媒体 API 路由契约与 MKV 标头支持...');
+const streamHandlerPath = join(FUNCTIONS_DIR, 'api', 'stream', '[id].js');
+try {
+  const streamCode = readFileSync(streamHandlerPath, 'utf8');
+  
+  // 必须包含 MKV MIME 映射为 video/x-matroska
+  if (!streamCode.includes('video/x-matroska')) {
+    throw new Error('stream 处理器缺失 MKV (video/x-matroska) MIME 类型映射！');
+  }
+  // 必须支持 Accept-Ranges: bytes
+  if (!streamCode.includes('Accept-Ranges') || !streamCode.includes('bytes')) {
+    throw new Error('stream 处理器缺失 Accept-Ranges: bytes 标头配置！');
+  }
+  // 必须支持 HTTP 206 Content-Range
+  if (!streamCode.includes('Content-Range')) {
+    throw new Error('stream 处理器缺失 Content-Range 透传机制，无法支持视频拖拽进度分片！');
+  }
+  // 必须支持 Access-Control-Expose-Headers 暴露媒体标头
+  if (!streamCode.includes('Access-Control-Expose-Headers')) {
+    throw new Error('stream 处理器未暴露 Access-Control-Expose-Headers，可能导致前端/外部播放器无法获取流大小！');
+  }
+  console.log('✅ 流媒体处理契约合规：MKV MIME 规范化、Range 分片与 CORS 标头校验全部通过。');
+} catch (err) {
+  console.error(`❌ 流媒体契约检查失败: ${err.message}`);
   process.exit(1);
 }
 

@@ -31,6 +31,40 @@ const MIME_MAP = {
   ass: "text/plain",
 };
 
+// 文件名内存短缓存（TTL 5分钟），避免高频 Range 分片请求与未带参数的直链重复查询 Google API
+const filenameCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 尝试从短缓存或 Google Drive 获取文件名称
+ * @param {string} fileId 文件 ID
+ * @param {string} token Google 访问令牌
+ * @returns {Promise<string>}
+ */
+async function getCachedFilename(fileId, token) {
+  const cached = filenameCache.get(fileId);
+  const now = Date.now();
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.name;
+  }
+  try {
+    const metaResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=name`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    if (metaResp.ok) {
+      const meta = await metaResp.json();
+      if (meta && meta.name) {
+        filenameCache.set(fileId, { timestamp: now, name: meta.name });
+        return meta.name;
+      }
+    }
+  } catch (_) {}
+  return "";
+}
+
 /**
  * 获取媒体文件的规范化 Content-Type
  * @param {string} filename 文件名
@@ -78,13 +112,22 @@ async function handleStream(context, isHead = false) {
   }
 
   // 获取请求中携带的自定义文件名（用于校准 Content-Type 及外部播放器识别）
-  const customFilename = url.searchParams.get("filename") || url.searchParams.get("name") || "";
+  let customFilename = url.searchParams.get("filename") || url.searchParams.get("name") || "";
 
   try {
     const token = await getAccessToken(env);
 
-    // 1. 获取客户端的 Range 请求头
+    // 若 URL 未提供文件名（如外部播放器或直链切换未带参数），通过短缓存或 Google Drive 补充
+    if (!customFilename && token) {
+      customFilename = await getCachedFilename(fileId, token);
+    } else if (customFilename) {
+      filenameCache.set(fileId, { timestamp: Date.now(), name: customFilename });
+    }
+
+    // 1. 获取客户端的 Range 请求头及条件请求标头
     const clientRange = request.headers.get("Range");
+    const ifRange = request.headers.get("If-Range");
+    const ifMatch = request.headers.get("If-Match");
 
     // 2. 构造发往 Google Drive API 的请求
     const googleDriveUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
@@ -95,6 +138,12 @@ async function handleStream(context, isHead = false) {
     fetchHeaders.set("Authorization", `Bearer ${token}`);
     if (clientRange) {
       fetchHeaders.set("Range", clientRange);
+    }
+    if (ifRange) {
+      fetchHeaders.set("If-Range", ifRange);
+    }
+    if (ifMatch) {
+      fetchHeaders.set("If-Match", ifMatch);
     }
 
     // 3. 请求 Google Drive API 获取媒体流
@@ -140,6 +189,16 @@ async function handleStream(context, isHead = false) {
       responseHeaders.set("Content-Range", contentRange);
     }
 
+    // 透传 ETag 与 Last-Modified（支持条件请求强一致性与多线程分片定位）
+    const etag = googleResp.headers.get("ETag");
+    if (etag) {
+      responseHeaders.set("ETag", etag);
+    }
+    const lastModified = googleResp.headers.get("Last-Modified");
+    if (lastModified) {
+      responseHeaders.set("Last-Modified", lastModified);
+    }
+
     // 规范 Content-Disposition，方便外部播放器（PotPlayer、VLC、MPV、IINA）识别真实文件名
     if (customFilename) {
       const safeFilename = customFilename.replace(/["\r\n]/g, "");
@@ -158,10 +217,10 @@ async function handleStream(context, isHead = false) {
     // 确保 CORS 标头及分片暴露标头齐全，保障 Canvas 截图与前端流探测
     responseHeaders.set("Access-Control-Allow-Origin", "*");
     responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-    responseHeaders.set("Access-Control-Allow-Headers", "Range, Authorization, Content-Type, Origin, Accept");
+    responseHeaders.set("Access-Control-Allow-Headers", "Range, Authorization, Content-Type, Origin, Accept, If-Range, If-Match");
     responseHeaders.set(
       "Access-Control-Expose-Headers",
-      "Content-Range, Content-Length, Accept-Ranges, Content-Type, Content-Disposition"
+      "Content-Range, Content-Length, Accept-Ranges, Content-Type, Content-Disposition, ETag, Last-Modified"
     );
 
     // 返回 206 或 200 状态码
