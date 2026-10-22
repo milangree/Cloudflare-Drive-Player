@@ -23,6 +23,10 @@ const state = {
   activeSubtitleBlobUrl: null,
   activeSubtitleItem: null,
   currentSubtitleOffset: 0,
+  activeAudioItem: null,
+  audioInstance: null,
+  audioLyrics: [],
+  activeDocItem: null,
   accessToken: localStorage.getItem("access_token") || "",
   adminToken: localStorage.getItem("admin_token") || "",
   isAdmin: false,
@@ -48,6 +52,7 @@ const dom = {
   refreshBtn: document.getElementById("refresh-btn"),
   viewModeBtn: document.getElementById("view-mode-btn"),
   viewIcon: document.getElementById("view-icon"),
+  themeToggleBtn: document.getElementById("theme-toggle-btn"),
   adminEntryBtn: document.getElementById("admin-entry-btn"),
   toggleSelectModeBtn: document.getElementById("toggle-select-mode-btn"),
   selectModeIcon: document.getElementById("select-mode-icon"),
@@ -135,6 +140,7 @@ const dom = {
   playerFileName: document.getElementById("player-file-name"),
   playerTypeIcon: document.getElementById("player-type-icon"),
   playerDownloadBtn: document.getElementById("player-download-btn"),
+  playerDownloadBtnQuick: document.getElementById("player-download-btn-quick"),
   playerCopyLinkBtn: document.getElementById("player-copy-link-btn"),
   playerMaximizeBtn: document.getElementById("player-maximize-btn"),
   playerMaximizeIcon: document.getElementById("player-maximize-icon"),
@@ -180,6 +186,40 @@ const dom = {
   imagePreview: document.getElementById("image-preview"),
   imageName: document.getElementById("image-name"),
   closeImageBtn: document.getElementById("close-image-btn"),
+  // 音频深度工作台
+  audioStudioModal: document.getElementById("audio-studio-modal"),
+  audioStudioHeaderTitle: document.getElementById("audio-studio-header-title"),
+  audioStudioDiscIcon: document.getElementById("audio-studio-disc-icon"),
+  audioFormatBadge: document.getElementById("audio-format-badge"),
+  audioStudioDownloadBtn: document.getElementById("audio-studio-download-btn"),
+  audioPlaylistToggleBtn: document.getElementById("audio-playlist-toggle-btn"),
+  audioPlaylistCountLabel: document.getElementById("audio-playlist-count-label"),
+  closeAudioStudioBtn: document.getElementById("close-audio-studio-btn"),
+  audioStudioVinyl: document.getElementById("audio-studio-vinyl"),
+  audioStudioCover: document.getElementById("audio-studio-cover"),
+  audioTrackTitle: document.getElementById("audio-track-title"),
+  audioTrackArtist: document.getElementById("audio-track-artist"),
+  lyricContainer: document.getElementById("lyric-container"),
+  audioPlaylistDrawer: document.getElementById("audio-playlist-drawer"),
+  closeAudioPlaylistBtn: document.getElementById("close-audio-playlist-btn"),
+  audioPlaylistItems: document.getElementById("audio-playlist-items"),
+  audioProgressBarContainer: document.getElementById("audio-progress-bar-container"),
+  audioProgressBar: document.getElementById("audio-progress-bar"),
+  audioTimeLabel: document.getElementById("audio-time-label"),
+  audioPrevBtn: document.getElementById("audio-prev-btn"),
+  audioPlayToggleBtn: document.getElementById("audio-play-toggle-btn"),
+  audioPlayIcon: document.getElementById("audio-play-icon"),
+  audioNextBtn: document.getElementById("audio-next-btn"),
+  // 文档查看器
+  docViewerModal: document.getElementById("doc-viewer-modal"),
+  docViewerIcon: document.getElementById("doc-viewer-icon"),
+  docViewerTitle: document.getElementById("doc-viewer-title"),
+  docTypeBadge: document.getElementById("doc-type-badge"),
+  docViewerDownloadBtn: document.getElementById("doc-viewer-download-btn"),
+  closeDocViewerBtn: document.getElementById("close-doc-viewer-btn"),
+  docPdfContainer: document.getElementById("doc-pdf-container"),
+  docPdfIframe: document.getElementById("doc-pdf-iframe"),
+  docTextContainer: document.getElementById("doc-text-container"),
   // 配置引导模态框
   configGuideModal: document.getElementById("config-guide-modal"),
   closeGuideBtn: document.getElementById("close-guide-btn"),
@@ -1320,14 +1360,13 @@ function renderGridView(items) {
       const thumbUrl = getHighResThumb(item, 640);
       const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "";
       const resBadge = getVideoResolution(item);
-      const isSelected = state.selectedItemIds.has(item.id);
 
-      // 缩略图海报区域 (视频或图片)
+      // 缩略图海报区域 (视频、图片、音频黑胶、文档卡片)
       let mediaPosterHtml = "";
       if (thumbUrl && (item.isVideo || item.isImage)) {
         mediaPosterHtml = `
-          <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-900 mb-3 border border-slate-800/80 group-hover:border-brand-500/40 transition-colors">
-            <img src="${thumbUrl}" alt="${item.name}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.classList.add('hidden');const fb=this.nextElementSibling?.classList?.contains('thumb-fallback')?this.nextElementSibling:null;if(fb){fb.classList.remove('hidden');}">
+          <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 mb-2.5 border border-slate-800/80 group-hover:border-brand-500/40 transition-colors flex-shrink-0">
+            <img src="${thumbUrl}" alt="${escapeHtml(item.name)}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.classList.add('hidden');const fb=this.nextElementSibling?.classList?.contains('thumb-fallback')?this.nextElementSibling:null;if(fb){fb.classList.remove('hidden');}">
             <div class="thumb-fallback hidden absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-slate-500">
               <i data-lucide="${item.isVideo ? 'film' : 'image'}" class="w-8 h-8 mb-1 text-slate-600"></i>
               <span class="text-[10px] text-slate-500">${ext ? ext.toUpperCase() : '预览'}</span>
@@ -1357,94 +1396,95 @@ function renderGridView(items) {
             </div>
           </div>
         `;
+      } else if (item.isAudio) {
+        mediaPosterHtml = `
+          <div class="relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
+            <div class="w-12 h-12 rounded-full bg-black/80 border-2 border-purple-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+              <i data-lucide="disc" class="w-6 h-6 text-purple-400 animate-spin-slow"></i>
+            </div>
+            <div class="absolute top-2 left-2 flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-600 text-white shadow-sm">${ext || 'AUDIO'}</span>
+            </div>
+            <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-purple-300">无损音乐</span>
+          </div>
+        `;
+      } else if (item.isDocument || /\.(pdf|md|txt|json|log|csv)$/i.test(item.name)) {
+        const isPdf = /\.pdf$/i.test(item.name);
+        mediaPosterHtml = `
+          <div class="relative w-full aspect-video rounded-xl ${isPdf ? 'bg-gradient-to-br from-blue-950/80 to-slate-900 border-blue-500/30 group-hover:border-blue-500' : 'bg-gradient-to-br from-emerald-950/80 to-slate-900 border-emerald-500/30 group-hover:border-emerald-500'} overflow-hidden mb-2.5 border flex items-center justify-center transition-all flex-shrink-0">
+            <div class="w-12 h-14 ${isPdf ? 'bg-blue-500/10 border-blue-500/30' : 'bg-emerald-500/10 border-emerald-500/30'} backdrop-blur-md rounded border p-2 flex flex-col justify-between group-hover:scale-105 transition-transform">
+              <i data-lucide="${isPdf ? 'file-text' : 'code'}" class="w-4 h-4 ${isPdf ? 'text-blue-400' : 'text-emerald-400'}"></i>
+              <div class="text-[9px] font-mono font-bold ${isPdf ? 'text-blue-300' : 'text-emerald-300'}">${ext || 'DOC'}</div>
+            </div>
+            <div class="absolute top-2 left-2 flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${isPdf ? 'bg-rose-600' : 'bg-emerald-600'} text-white shadow-sm">${ext || 'DOC'}</span>
+            </div>
+            <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-slate-300">文档预览</span>
+          </div>
+        `;
       }
 
       return `
-        <div class="glass-card rounded-xl p-3.5 flex flex-col justify-between group relative transition-all duration-200 ${isSelected ? "item-selected-card" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <!-- 勾选复选框 (左上角高优先级层级) -->
-          <div class="absolute top-2 left-2 z-20 item-checkbox-wrapper">
-            <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900/90 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer transition-opacity ${isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
+        <div class="glass-card rounded-2xl p-3.5 flex flex-col justify-between group relative transition-all duration-200 cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
+          
+          <!-- 悬停气泡 (带一键下载入口) -->
+          <div class="title-tooltip-popover">
+            <div class="text-[10px] uppercase font-mono tracking-wider mb-1 text-slate-400">完整文件名</div>
+            <div class="font-medium select-all mb-2.5 break-all text-white">${escapeHtml(item.name)}</div>
+            ${!item.isFolder ? `
+              <button class="w-full py-1.5 px-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm file-popover-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>立即下载原文件 (${formatBytes(item.size)})</span>
+              </button>
+            ` : ""}
           </div>
-          ${!mediaPosterHtml && resBadge ? `<span class="absolute top-2.5 right-2.5 text-[9px] px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30 font-black tracking-widest uppercase">${resBadge}</span>` : ""}
+
           <div>
-            ${
-              mediaPosterHtml
-                ? `<div class="cursor-pointer media-action-trigger" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isImage ? "image" : "preview")}" title="${item.isVideo ? "点击播放视频" : "点击查看大图"}">
-                    ${mediaPosterHtml}
-                  </div>`
-                : ""
-            }
-            <div class="flex items-start gap-3">
+            ${mediaPosterHtml}
+            <div class="flex items-start gap-2.5">
               ${
                 !mediaPosterHtml
-                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color} ${item.isFolder ? "cursor-pointer hover:border-brand-500/50 hover:bg-slate-700/50 folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "点击进入文件夹 (多选模式下可 Alt+点击)" : ""}">
+                  ? `<div class="w-10 h-10 rounded-lg bg-slate-800/80 border border-slate-700/50 flex items-center justify-center flex-shrink-0 ${color} ${item.isFolder ? "cursor-pointer hover:border-brand-500/50 hover:bg-slate-700/50 folder-enter-trigger" : ""}" data-id="${item.id}">
                       <i data-lucide="${icon}" class="w-5 h-5"></i>
                     </div>`
                   : ""
               }
               <div class="flex-1 min-w-0">
-                <h4 class="text-sm font-medium text-slate-200 line-clamp-2 break-all leading-snug ${item.isFolder ? "cursor-pointer hover:text-brand-500 transition-colors folder-enter-trigger" : (isMedia ? "cursor-pointer hover:text-brand-500 transition-colors media-action-trigger" : (item.isImage ? "cursor-pointer hover:text-brand-500 transition-colors media-action-trigger" : ""))}" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isAudio ? "play" : (item.isImage ? "image" : "preview"))}" title="${item.isFolder ? `点击进入文件夹: ${item.name}` : (isMedia ? `点击播放: ${item.name}` : (item.isImage ? `点击预览: ${item.name}` : item.name))}">
-                  ${item.name}
+                <h4 class="card-title-v3 group-hover:text-brand-500 transition-colors" data-id="${item.id}">
+                  ${escapeHtml(item.name)}
                 </h4>
-                <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                  ${
-                    item.isFolder
-                      ? `<span class="text-amber-400 font-medium cursor-pointer hover:underline folder-enter-trigger" data-id="${item.id}">${item.itemCount || 0} 个文件</span> · <span>${formatBytes(item.size)}</span>`
-                      : `<span>${formatBytes(item.size)}</span>`
-                  }
-                </p>
               </div>
             </div>
           </div>
 
-          <div class="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
-            <span class="truncate">${formatDate(item.modifiedTime)}</span>
-            <div class="flex items-center gap-1 opacity-90 transition-opacity">
+          <div class="mt-auto pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
+            <div class="flex items-center gap-1.5 truncate pr-2">
+              <span class="text-brand-500 font-semibold">${item.isFolder ? `${item.itemCount || 0} 项` : formatBytes(item.size)}</span>
+              <span>·</span>
+              <span class="truncate">${formatDate(item.modifiedTime)}</span>
+            </div>
+            <div class="flex items-center gap-1 flex-shrink-0">
               ${
-                item.isFolder
-                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger folder-penetrate-btn" data-id="${item.id}" title="进入文件夹">
+                !item.isFolder
+                  ? `<button class="p-1.5 -mr-1 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载原文件">
+                      <i data-lucide="download" class="w-4 h-4"></i>
+                    </button>
+                    <button class="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
+                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    </button>`
+                  : `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger" data-id="${item.id}" title="进入文件夹">
                       <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
                       <span>打开</span>
                     </button>`
-                  : ""
-              }
-              ${
-                isMedia
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-300 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
-                      <i data-lucide="play" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-              ${
-                item.isImage
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-300 media-action-trigger" data-id="${item.id}" data-action="image" title="查看大图">
-                      <i data-lucide="image" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-              ${
-                !item.isFolder
-                  ? `<a href="${downloadUrl}" download class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400" title="下载">
-                      <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    </a>
-                    <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
-                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
               }
               ${
                 state.isAdmin
-                  ? `
-                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="重命名">
+                  ? `<button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="重命名">
                       <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 admin-move-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="移动到...">
-                      <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="删除">
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="删除">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                  `
+                    </button>`
                   : ""
               }
             </div>
@@ -1466,29 +1506,25 @@ function renderListView(items) {
       const streamUrl = `/api/stream/${item.id}`;
       const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
       const thumbUrl = getHighResThumb(item, 120);
-      const isSelected = state.selectedItemIds.has(item.id);
 
       return `
-        <tr class="file-row group transition-colors ${isSelected ? "item-selected-row" : ""}" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <td class="w-10 px-3 py-2.5 text-center item-checkbox-wrapper">
-            <input type="checkbox" class="item-checkbox rounded border-slate-700 bg-slate-900 text-brand-500 focus:ring-brand-500/30 w-4 h-4 cursor-pointer" data-id="${item.id}" ${isSelected ? "checked" : ""} title="选择此项">
-          </td>
+        <tr class="file-row group transition-colors cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
           <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
             ${
               thumbUrl && (item.isVideo || item.isImage)
-                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0 cursor-pointer media-action-trigger hover:opacity-80 transition-opacity" data-id="${item.id}" data-action="${item.isVideo ? "play" : "image"}" title="${item.isVideo ? "点击播放" : "点击预览"}">
+                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0 cursor-pointer media-action-trigger hover:opacity-80 transition-opacity" data-id="${item.id}">
                     <img src="${thumbUrl}" alt="" class="w-full h-full object-cover">
                   </div>`
-                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}" title="${item.isFolder ? "进入文件夹 (多选模式下可 Alt+点击)" : ""}">
+                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}">
                     <i data-lucide="${icon}" class="w-4 h-4"></i>
                   </div>`
             }
-            <span class="font-medium text-slate-200 break-all leading-normal ${item.isFolder ? "cursor-pointer hover:text-brand-500 folder-enter-trigger" : (isMedia ? "cursor-pointer hover:text-brand-500 media-action-trigger" : (item.isImage ? "cursor-pointer hover:text-brand-500 media-action-trigger" : ""))}" data-id="${item.id}" data-action="${item.isVideo ? "play" : (item.isAudio ? "play" : "image")}" title="${item.isFolder ? `进入文件夹: ${item.name}` : (isMedia ? `播放: ${item.name}` : item.name)}">
-              ${item.name}
+            <span class="font-medium text-slate-200 break-all leading-normal ${item.isFolder ? "cursor-pointer hover:text-brand-500 folder-enter-trigger" : "cursor-pointer hover:text-brand-500"}" data-id="${item.id}">
+              ${escapeHtml(item.name)}
             </span>
             ${
               item.isFolder
-                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0 cursor-pointer hover:bg-amber-500/20 folder-enter-trigger" data-id="${item.id}">${item.itemCount || 0} 个文件</span>`
+                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0">${item.itemCount || 0} 个文件</span>`
                 : ""
             }
           </td>
@@ -1502,49 +1538,30 @@ function renderListView(items) {
             <div class="flex items-center justify-end gap-1">
               ${
                 item.isFolder
-                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger folder-penetrate-btn mr-1" data-id="${item.id}" title="进入文件夹">
+                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger mr-1" data-id="${item.id}" title="进入文件夹">
                       <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
                       <span>打开</span>
                     </button>`
                   : ""
               }
               ${
-                isMedia
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-400 play-btn" data-id="${item.id}" data-name="${item.name}" data-video="${item.isVideo}" title="立即播放">
-                      <i data-lucide="play" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-              ${
-                item.isImage
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-slate-800 text-slate-400 media-action-trigger" data-id="${item.id}" data-action="image" title="查看大图">
-                      <i data-lucide="image" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-              ${
                 !item.isFolder
-                  ? `<a href="${downloadUrl}" download class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400" title="下载">
+                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-brand-500/10 text-slate-400 file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载原文件">
                       <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    </a>
+                    </button>
                     <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
-                      <i data-lucide="copy" class="w-4 h-4"></i>
+                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                     </button>`
                   : ""
               }
               ${
                 state.isAdmin
-                  ? `
-                    <button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="重命名">
+                  ? `<button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="重命名">
                       <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
                     </button>
-                    <button class="p-1.5 hover:text-blue-400 rounded hover:bg-slate-800 text-slate-400 admin-move-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="移动到...">
-                      <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${item.name}" title="删除">
+                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="删除">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                  `
+                    </button>`
                   : ""
               }
             </div>
@@ -1570,110 +1587,33 @@ function triggerFileDownload(item) {
   document.body.removeChild(a);
 }
 
-// 绑定卡片与列表行点击事件 (OpenList 优先级仲裁范式)
+// 绑定卡片与列表行点击事件
 function bindItemEvents(container) {
-  // 0. 复选框勾选事件：阻止冒泡并切换单项选中状态
-  container.querySelectorAll(".item-checkbox").forEach((cb) => {
-    cb.addEventListener("click", (e) => {
+  // 1. 原生常驻下载按钮：阻止冒泡直接调用原生静默下载
+  container.querySelectorAll(".file-quick-download-btn, .file-popover-download-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      const id = cb.getAttribute("data-id");
-      toggleSelectItem(id, cb.checked);
-    });
-    cb.addEventListener("change", (e) => {
-      e.stopPropagation();
-      const id = cb.getAttribute("data-id");
-      toggleSelectItem(id, cb.checked);
+      const id = btn.getAttribute("data-id");
+      const item = state.items.find((i) => i.id === id);
+      if (item) triggerFileDownload(item);
     });
   });
 
-  // 1. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
+  // 2. 文件夹打开事件：仅在明确点击文件夹打开按钮、文件夹名称或图标时触发
   container.querySelectorAll(".folder-enter-trigger").forEach((el) => {
     el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const id = el.getAttribute("data-id");
       const item = state.items.find((i) => i.id === id);
-      if (!item || !item.isFolder) return;
-
-      // 在多选激活模式下，优先作为选择行，除非按住 Alt/Option 或点击穿透按钮
-      if (state.selectMode && !e.altKey && !el.classList.contains("folder-penetrate-btn")) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSelectItem(id);
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-      navigateToFolder(item.id, item.name);
-    });
-  });
-
-  // 2. 媒体操作事件（视频播放 / 图片预览）：点击海报预览图、标题、或具体动作按钮时触发
-  container.querySelectorAll(".media-action-trigger").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      const id = el.getAttribute("data-id");
-      const item = state.items.find((i) => i.id === id);
-      if (!item) return;
-
-      // 在多选激活模式下，优先作为选择行，防止误触导致视频播放弹窗打断多选
-      if (state.selectMode) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSelectItem(id);
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-      const action = el.getAttribute("data-action");
-      if (action === "play" || item.isVideo || item.isAudio) {
-        openMediaPlayer(item);
-      } else if (action === "image" || item.isImage) {
-        openImagePreview(item);
-      } else {
-        triggerFileDownload(item);
+      if (item && item.isFolder) {
+        navigateToFolder(item.id, item.name);
       }
     });
   });
 
-  // 3. 播放按钮
-  container.querySelectorAll(".play-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const id = btn.getAttribute("data-id");
-      if (state.selectMode) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSelectItem(id);
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      const item = state.items.find((i) => i.id === id);
-      if (item) openMediaPlayer(item);
-    });
-  });
-
-  // 3.5 整行/整卡片点击代理 (OpenList 核心体验：多选模式下任意点击整行直接切换勾选)
-  container.querySelectorAll(".glass-card, .file-row").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      // 避免重复触发内部已处理的交互按钮
-      if (
-        e.target.closest("button") || 
-        e.target.closest("a") || 
-        e.target.closest("input") || 
-        e.target.closest(".media-action-trigger") || 
-        e.target.closest(".folder-enter-trigger")
-      ) {
-        return;
-      }
-      const id = card.getAttribute("data-id");
-      if (state.selectMode) {
-        e.preventDefault();
-        toggleSelectItem(id);
-      }
-    });
-  });
-
-  // 4. 复制直链按钮
+  // 3. 复制直链按钮
   container.querySelectorAll(".copy-link-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
@@ -1684,6 +1624,37 @@ function bindItemEvents(container) {
         showToast("已复制直链到剪贴板！");
       } catch (err) {
         showToast("复制失败，请手动复制");
+      }
+    });
+  });
+
+  // 4. 整行 / 整卡片点击路由 (多模态打开：音频 -> 深度唱片机，文档 -> 阅读器，视频 -> 剧场播放器，图片 -> 预览)
+  container.querySelectorAll(".glass-card, .file-row").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (
+        e.target.closest("button") || 
+        e.target.closest("a") || 
+        e.target.closest("input") ||
+        e.target.closest(".title-tooltip-popover")
+      ) {
+        return;
+      }
+      const id = card.getAttribute("data-id");
+      const item = state.items.find((i) => i.id === id);
+      if (!item) return;
+
+      if (item.isFolder) {
+        navigateToFolder(item.id, item.name);
+      } else if (item.isAudio) {
+        openAudioStudio(item);
+      } else if (item.isDocument || /\.(pdf|md|txt|json|log|csv)$/i.test(item.name)) {
+        openDocViewer(item);
+      } else if (item.isVideo) {
+        openMediaPlayer(item);
+      } else if (item.isImage) {
+        openImagePreview(item);
+      } else {
+        triggerFileDownload(item);
       }
     });
   });
@@ -1982,9 +1953,347 @@ function toggleAutoPlayNext() {
   showToast(state.autoPlayNext ? "已开启同名连续剧自动连播" : "已关闭自动连播");
 }
 
+// 主题系统管理 (暗色/浅色)
+function initTheme() {
+  const currentTheme = localStorage.getItem("app_theme") || "dark";
+  applyTheme(currentTheme);
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  if (theme === "dark") {
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
+  localStorage.setItem("app_theme", theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = current === "dark" ? "light" : "dark";
+  applyTheme(next);
+  showToast(`已切换至${next === "dark" ? "暗色模式 🌙" : "浅色模式 ☀️"}`);
+}
+
 // ==========================================
-// 播放器增强：断点记忆播放与外挂字幕 (OpenList 设计对齐)
+// 深度音频工作台 (黑胶 + 同步滚动歌词 + 播放列表 + 常驻下载)
 // ==========================================
+function parseLrc(lrcText) {
+  if (!lrcText) return [];
+  const lines = lrcText.split("\n");
+  const timeExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+  const result = [];
+  for (const line of lines) {
+    const match = timeExp.exec(line);
+    if (match) {
+      const minutes = parseInt(match[1], 10);
+      const seconds = parseInt(match[2], 10);
+      const ms = match[3].length === 2 ? parseInt(match[3], 10) * 10 : parseInt(match[3], 10);
+      const time = minutes * 60 + seconds + ms / 1000;
+      const text = line.replace(timeExp, "").trim();
+      if (text) {
+        result.push({ time, text });
+      }
+    }
+  }
+  return result.sort((a, b) => a.time - b.time);
+}
+
+function formatAudioTime(seconds) {
+  if (isNaN(seconds) || seconds < 0) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m < 10 ? "0" + m : m}:${s < 10 ? "0" + s : s}`;
+}
+
+async function openAudioStudio(item) {
+  destroyPlayer();
+  state.activeAudioItem = item;
+  const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "AUDIO";
+  const streamUrl = `/api/stream/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+
+  if (dom.audioStudioHeaderTitle) dom.audioStudioHeaderTitle.textContent = item.name;
+  if (dom.audioTrackTitle) dom.audioTrackTitle.textContent = item.name.replace(/\.[a-zA-Z0-9]+$/, "");
+  if (dom.audioFormatBadge) dom.audioFormatBadge.textContent = `${ext} / 无损`;
+  if (dom.audioStudioDownloadBtn) {
+    dom.audioStudioDownloadBtn.href = downloadUrl;
+    dom.audioStudioDownloadBtn.onclick = (e) => {
+      e.stopPropagation();
+      triggerFileDownload(item);
+    };
+  }
+
+  // 初始化 Audio 实例
+  if (state.audioInstance) {
+    state.audioInstance.pause();
+    state.audioInstance = null;
+  }
+  const audio = new Audio(streamUrl);
+  state.audioInstance = audio;
+
+  // 歌词重置与搜寻
+  state.audioLyrics = [];
+  if (dom.lyricContainer) {
+    dom.lyricContainer.innerHTML = '<div class="text-slate-500 text-center py-10">正在加载同步歌词...</div>';
+  }
+
+  // 尝试在同目录下寻找同名 .lrc 文件
+  const baseName = item.name.replace(/\.[a-zA-Z0-9]+$/, "");
+  const matchedLrcItem = (state.items || []).find((i) => {
+    return i.name.toLowerCase() === `${baseName.toLowerCase()}.lrc` || 
+           (i.name.toLowerCase().startsWith(baseName.toLowerCase()) && i.name.toLowerCase().endsWith(".lrc"));
+  });
+
+  if (matchedLrcItem) {
+    try {
+      const res = await fetch(`/api/stream/${matchedLrcItem.id}`);
+      if (res.ok) {
+        const text = await res.text();
+        state.audioLyrics = parseLrc(text);
+      }
+    } catch (_) {}
+  }
+
+  if (state.audioLyrics.length > 0) {
+    dom.lyricContainer.innerHTML = state.audioLyrics
+      .map((l, idx) => `<div class="lyric-line cursor-pointer select-none" data-idx="${idx}" data-time="${l.time}">${escapeHtml(l.text)}</div>`)
+      .join("");
+
+    dom.lyricContainer.querySelectorAll(".lyric-line").forEach((el) => {
+      el.addEventListener("click", () => {
+        const t = parseFloat(el.getAttribute("data-time"));
+        if (state.audioInstance && !isNaN(t)) {
+          state.audioInstance.currentTime = t;
+        }
+      });
+    });
+  } else {
+    dom.lyricContainer.innerHTML = '<div class="text-slate-500 text-center py-10">纯音乐或暂无匹配歌词，沉浸享受无损音质</div>';
+  }
+
+  // 播放队列渲染
+  renderAudioPlaylist();
+
+  // 音频事件监听
+  audio.addEventListener("timeupdate", () => {
+    if (!state.audioInstance) return;
+    const cur = state.audioInstance.currentTime;
+    const dur = state.audioInstance.duration || 0;
+    if (dom.audioTimeLabel) dom.audioTimeLabel.textContent = `${formatAudioTime(cur)} / ${formatAudioTime(dur)}`;
+    if (dom.audioProgressBar && dur > 0) {
+      dom.audioProgressBar.style.width = `${(cur / dur) * 100}%`;
+    }
+
+    // 歌词同步滚动与高亮
+    if (state.audioLyrics.length > 0 && dom.lyricContainer) {
+      let activeIdx = 0;
+      for (let i = 0; i < state.audioLyrics.length; i++) {
+        if (cur >= state.audioLyrics[i].time) {
+          activeIdx = i;
+        } else {
+          break;
+        }
+      }
+      const lines = dom.lyricContainer.querySelectorAll(".lyric-line");
+      lines.forEach((l, idx) => {
+        if (idx === activeIdx) {
+          if (!l.classList.contains("active")) {
+            l.classList.add("active");
+            l.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        } else {
+          l.classList.remove("active");
+        }
+      });
+    }
+  });
+
+  audio.addEventListener("play", () => {
+    if (dom.audioStudioVinyl) dom.audioStudioVinyl.classList.remove("spin-paused");
+    if (dom.audioPlayIcon) dom.audioPlayIcon.setAttribute("data-lucide", "pause");
+    if (window.lucide) lucide.createIcons();
+  });
+
+  audio.addEventListener("pause", () => {
+    if (dom.audioStudioVinyl) dom.audioStudioVinyl.classList.add("spin-paused");
+    if (dom.audioPlayIcon) dom.audioPlayIcon.setAttribute("data-lucide", "play");
+    if (window.lucide) lucide.createIcons();
+  });
+
+  audio.addEventListener("ended", () => {
+    playNextAudio();
+  });
+
+  // 进度条点击跳转
+  if (dom.audioProgressBarContainer) {
+    dom.audioProgressBarContainer.onclick = (e) => {
+      if (!state.audioInstance || !state.audioInstance.duration) return;
+      const rect = dom.audioProgressBarContainer.getBoundingClientRect();
+      const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      state.audioInstance.currentTime = clickRatio * state.audioInstance.duration;
+    };
+  }
+
+  // 展现模态窗口
+  if (dom.audioStudioModal) {
+    dom.audioStudioModal.classList.remove("hidden");
+    dom.audioStudioModal.classList.add("flex");
+  }
+
+  try {
+    await audio.play();
+  } catch (_) {
+    if (dom.audioPlayIcon) dom.audioPlayIcon.setAttribute("data-lucide", "play");
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function renderAudioPlaylist() {
+  const current = state.activeAudioItem;
+  const audioList = (state.items || []).filter((i) => i.isAudio);
+  if (dom.audioPlaylistCountLabel) dom.audioPlaylistCountLabel.textContent = `播放列表 (${audioList.length})`;
+  if (!dom.audioPlaylistItems) return;
+
+  dom.audioPlaylistItems.innerHTML = audioList
+    .map((item, idx) => {
+      const isCur = current && item.id === current.id;
+      return `
+        <div class="py-2.5 px-3 flex items-center justify-between hover:bg-slate-800/80 cursor-pointer rounded-lg transition-colors group ${isCur ? "bg-purple-950/40 border border-purple-500/30" : ""}" data-id="${item.id}">
+          <div class="flex items-center gap-2 truncate pr-2">
+            <span class="text-[10px] font-mono ${isCur ? "text-purple-400 font-bold" : "text-slate-500"}">${idx + 1}</span>
+            <span class="truncate ${isCur ? "text-purple-300 font-medium" : "text-slate-300 group-hover:text-white"}">${escapeHtml(item.name)}</span>
+          </div>
+          <button class="p-1 rounded text-slate-500 hover:text-purple-400 file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      `;
+    })
+    .join("");
+
+  dom.audioPlaylistItems.querySelectorAll("[data-id]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      const id = el.getAttribute("data-id");
+      const target = audioList.find((i) => i.id === id);
+      if (target) openAudioStudio(target);
+    });
+  });
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAudioStudio() {
+  if (state.audioInstance) {
+    state.audioInstance.pause();
+    state.audioInstance = null;
+  }
+  if (dom.audioStudioModal) {
+    dom.audioStudioModal.classList.add("hidden");
+    dom.audioStudioModal.classList.remove("flex");
+  }
+  if (dom.audioPlaylistDrawer) {
+    dom.audioPlaylistDrawer.classList.add("hidden");
+  }
+}
+
+function toggleAudioPlayback() {
+  if (!state.audioInstance) return;
+  if (state.audioInstance.paused) {
+    state.audioInstance.play();
+  } else {
+    state.audioInstance.pause();
+  }
+}
+
+function playNextAudio() {
+  const audioList = (state.items || []).filter((i) => i.isAudio);
+  if (audioList.length <= 1 || !state.activeAudioItem) return;
+  const curIdx = audioList.findIndex((i) => i.id === state.activeAudioItem.id);
+  const nextIdx = (curIdx + 1) % audioList.length;
+  openAudioStudio(audioList[nextIdx]);
+}
+
+function playPrevAudio() {
+  const audioList = (state.items || []).filter((i) => i.isAudio);
+  if (audioList.length <= 1 || !state.activeAudioItem) return;
+  const curIdx = audioList.findIndex((i) => i.id === state.activeAudioItem.id);
+  const prevIdx = (curIdx - 1 + audioList.length) % audioList.length;
+  openAudioStudio(audioList[prevIdx]);
+}
+
+// ==========================================
+// 全能沉浸式文档查看器 (PDF / Markdown / 代码 + 常驻下载)
+// ==========================================
+async function openDocViewer(item) {
+  state.activeDocItem = item;
+  const ext = item.name.includes(".") ? item.name.split(".").pop().toUpperCase() : "DOC";
+  const streamUrl = `/api/stream/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+
+  if (dom.docViewerTitle) dom.docViewerTitle.textContent = item.name;
+  if (dom.docTypeBadge) dom.docTypeBadge.textContent = `${ext} 文档`;
+  if (dom.docViewerDownloadBtn) {
+    dom.docViewerDownloadBtn.href = downloadUrl;
+    dom.docViewerDownloadBtn.onclick = (e) => {
+      e.stopPropagation();
+      triggerFileDownload(item);
+    };
+  }
+
+  const isPdf = /\.pdf$/i.test(item.name);
+  if (isPdf) {
+    if (dom.docPdfContainer) dom.docPdfContainer.classList.remove("hidden");
+    if (dom.docTextContainer) dom.docTextContainer.classList.add("hidden");
+    if (dom.docPdfIframe) dom.docPdfIframe.src = streamUrl;
+  } else {
+    if (dom.docPdfContainer) dom.docPdfContainer.classList.add("hidden");
+    if (dom.docTextContainer) {
+      dom.docTextContainer.classList.remove("hidden");
+      dom.docTextContainer.textContent = "正在读取文档内容...";
+    }
+    try {
+      const res = await fetch(streamUrl);
+      if (res.ok) {
+        const text = await res.text();
+        if (dom.docTextContainer) dom.docTextContainer.textContent = text;
+      } else {
+        if (dom.docTextContainer) dom.docTextContainer.textContent = `加载失败 (HTTP ${res.status})`;
+      }
+    } catch (err) {
+      if (dom.docTextContainer) dom.docTextContainer.textContent = `加载异常: ${err.message}`;
+    }
+  }
+
+  if (dom.docViewerModal) {
+    dom.docViewerModal.classList.remove("hidden");
+    dom.docViewerModal.classList.add("flex");
+  }
+}
+
+function closeDocViewer() {
+  if (dom.docPdfIframe) dom.docPdfIframe.src = "about:blank";
+  if (dom.docViewerModal) {
+    dom.docViewerModal.classList.add("hidden");
+    dom.docViewerModal.classList.remove("flex");
+  }
+}
+
+// 统一更新视频播放器一键下载原片入口
+function updatePlayerDownloadHref(item) {
+  if (!item) return;
+  const dlUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  if (dom.playerDownloadBtn) dom.playerDownloadBtn.href = dlUrl;
+  if (dom.playerDownloadBtnQuick) {
+    dom.playerDownloadBtnQuick.href = dlUrl;
+    dom.playerDownloadBtnQuick.onclick = (e) => {
+      e.stopPropagation();
+      triggerFileDownload(item);
+    };
+  }
+}
 
 const PROGRESS_STORAGE_KEY = "cf_player_progress";
 const SPEED_STORAGE_KEY = "cf_player_speed";
@@ -2523,7 +2832,7 @@ function openMediaPlayer(item) {
   const cleanTitle = item.name.replace(/\.[a-zA-Z0-9]+$/, "");
   dom.playerFileName.textContent = cleanTitle;
   dom.playerFileName.title = item.name;
-  dom.playerDownloadBtn.href = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
+  updatePlayerDownloadHref(item);
 
   // 统一标准播放器弹窗规范：稳定剧场视口，杜绝不同视频比例导致弹窗尺寸跳变与变形
   if (dom.playerDialog) {
@@ -3608,8 +3917,44 @@ function setupEventListeners() {
       closePlayer();
       closeImagePreview();
       closeAdminModal();
+      closeAudioStudio();
+      closeDocViewer();
     }
   });
+
+  // 主题切换绑定
+  if (dom.themeToggleBtn) {
+    dom.themeToggleBtn.addEventListener("click", toggleTheme);
+  }
+
+  // 音频专注视窗事件绑定
+  if (dom.closeAudioStudioBtn) {
+    dom.closeAudioStudioBtn.addEventListener("click", closeAudioStudio);
+  }
+  if (dom.audioPlayToggleBtn) {
+    dom.audioPlayToggleBtn.addEventListener("click", toggleAudioPlayback);
+  }
+  if (dom.audioPrevBtn) {
+    dom.audioPrevBtn.addEventListener("click", playPrevAudio);
+  }
+  if (dom.audioNextBtn) {
+    dom.audioNextBtn.addEventListener("click", playNextAudio);
+  }
+  if (dom.audioPlaylistToggleBtn && dom.audioPlaylistDrawer) {
+    dom.audioPlaylistToggleBtn.addEventListener("click", () => {
+      dom.audioPlaylistDrawer.classList.toggle("hidden");
+    });
+  }
+  if (dom.closeAudioPlaylistBtn && dom.audioPlaylistDrawer) {
+    dom.closeAudioPlaylistBtn.addEventListener("click", () => {
+      dom.audioPlaylistDrawer.classList.add("hidden");
+    });
+  }
+
+  // 文档查看器事件绑定
+  if (dom.closeDocViewerBtn) {
+    dom.closeDocViewerBtn.addEventListener("click", closeDocViewer);
+  }
 
   // 点击遮罩背景关闭
   dom.playerModal.addEventListener("click", (e) => {
@@ -3618,10 +3963,21 @@ function setupEventListeners() {
   dom.imageModal.addEventListener("click", (e) => {
     if (e.target === dom.imageModal) closeImagePreview();
   });
+  if (dom.audioStudioModal) {
+    dom.audioStudioModal.addEventListener("click", (e) => {
+      if (e.target === dom.audioStudioModal) closeAudioStudio();
+    });
+  }
+  if (dom.docViewerModal) {
+    dom.docViewerModal.addEventListener("click", (e) => {
+      if (e.target === dom.docViewerModal) closeDocViewer();
+    });
+  }
 }
 
 // 启动入口
 async function init() {
+  initTheme();
   setupEventListeners();
   if (state.viewMode === "list") {
     dom.viewIcon.setAttribute("data-lucide", "list");

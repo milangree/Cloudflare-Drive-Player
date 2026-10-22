@@ -26,6 +26,12 @@ const MIME_MAP = {
   flac: "audio/flac",
   aac: "audio/aac",
   m4a: "audio/mp4",
+  // 文档与歌词
+  pdf: "application/pdf",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  lrc: "text/plain; charset=utf-8",
   // 字幕
   vtt: "text/vtt",
   srt: "text/plain",

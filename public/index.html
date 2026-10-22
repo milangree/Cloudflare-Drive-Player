@@ -33,8 +33,19 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- 自定义样式 -->
   <link rel="stylesheet" href="/css/style.css">
+  <script>
+    (function() {
+      const theme = localStorage.getItem('app_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
 
   <!-- 顶部导航栏 -->
   <header class="sticky top-0 z-30 glass-panel border-b border-slate-800/80 px-4 sm:px-6 py-3">
@@ -75,9 +86,9 @@
           <i data-lucide="layout-grid" class="w-4 h-4" id="view-icon"></i>
         </button>
 
-        <!-- 多选开关 (参考 OpenList 规范：日常浏览纯净无复选框，管理员开启后激活多选模式) -->
-        <button id="toggle-select-mode-btn" title="多选模式" class="hidden p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-brand-400 transition-colors">
-          <i data-lucide="check-square" class="w-4 h-4" id="select-mode-icon"></i>
+        <!-- 主题切换按钮 (暗色/浅色) -->
+        <button id="theme-toggle-btn" title="切换暗色/浅色模式" class="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-colors">
+          <i data-lucide="sun-moon" class="w-4 h-4"></i>
         </button>
 
         <!-- 后台管理按钮 -->
@@ -144,9 +155,6 @@
       <table class="w-full text-left text-sm text-slate-300">
         <thead class="bg-slate-900/90 text-xs uppercase text-slate-400 border-b border-slate-800">
           <tr>
-            <th scope="col" class="w-10 px-3 py-3 text-center">
-              <input type="checkbox" id="select-all-checkbox" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-brand-500 focus:ring-0 focus:ring-offset-0 cursor-pointer" title="全选 / 反选" />
-            </th>
             <th scope="col" class="px-4 py-3 font-semibold">文件名</th>
             <th scope="col" class="px-4 py-3 font-semibold hidden md:table-cell">大小</th>
             <th scope="col" class="px-4 py-3 font-semibold hidden sm:table-cell">修改时间</th>
@@ -189,8 +197,14 @@
           <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-100 truncate select-all min-w-0" title="点击可全选完整文件名">正在播放...</span>
         </div>
 
-        <!-- 功能按钮区 (只保留核心三项：调用本地播放器、最大化/还原、关闭) -->
+        <!-- 功能按钮区 (保留核心操作：一键下载原片、调用本地播放器、最大化/还原、关闭) -->
         <div class="flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0">
+          <!-- 快捷下载原文件按钮 -->
+          <a id="player-download-btn-quick" href="#" download class="px-2.5 py-1 rounded-lg bg-brand-500 hover:bg-brand-600 text-white flex items-center gap-1 text-[11px] font-medium shadow-sm transition-colors" title="立即下载源文件">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">下载</span>
+          </a>
+
           <!-- 2. 调用本地播放器菜单下拉 (MPV / PotPlayer / IINA / VLC / Infuse / 复制直链) -->
           <div class="relative inline-block text-left" id="ext-player-dropdown-container">
             <button id="ext-player-menu-btn" class="w-8 h-8 rounded-lg bg-brand-500/15 hover:bg-brand-500/25 text-brand-400 hover:text-brand-300 border border-brand-500/30 transition-colors flex items-center justify-center cursor-pointer" title="调用本地播放器 (MPV / PotPlayer / IINA / VLC / Infuse / 复制直链)" aria-label="调用本地播放器" aria-haspopup="true">
@@ -544,217 +558,129 @@
     </div>
   </div>
 
-  <!-- 批量操作模态框：批量重命名 (支持 查找替换 / 添加前后缀 / 递增序号) -->
-  <div id="batch-rename-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
-    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i data-lucide="edit-3" class="w-4 h-4 text-brand-400"></i>
-          <span>批量重命名</span>
-        </h3>
-        <button id="close-batch-rename-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
+  <!-- 深度音频专注视窗 (黑胶 + 同步滚动歌词 + 播放列表 + 常驻下载) -->
+  <div id="audio-studio-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
+    <div class="relative w-full max-w-4xl h-[86vh] max-h-[760px] rounded-2xl modal-window-card flex flex-col overflow-hidden">
+      <!-- 顶部状态栏 -->
+      <div class="flex items-center justify-between px-4 py-3 modal-window-header text-xs">
+        <div class="flex items-center gap-2 truncate pr-2">
+          <i data-lucide="disc" class="w-4 h-4 text-purple-400 animate-spin-slow" id="audio-studio-disc-icon"></i>
+          <span class="font-semibold text-white" id="audio-studio-header-title">高解析音频工作台</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30" id="audio-format-badge">FLAC / Hi-Res</span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <a id="audio-studio-download-btn" href="#" download class="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-1 text-[11px] font-medium shadow-sm transition-colors" title="下载母带源文件">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>下载母带</span>
+          </a>
+          <button id="audio-playlist-toggle-btn" class="px-2.5 py-1 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors">
+            <i data-lucide="list-music" class="w-3.5 h-3.5 text-purple-400"></i>
+            <span id="audio-playlist-count-label">播放列表</span>
+          </button>
+          <button id="close-audio-studio-btn" class="p-1 rounded-lg text-slate-400 hover:text-white" title="关闭 (Esc)"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
       </div>
 
-      <!-- 模式选择 Tab -->
-      <div class="grid grid-cols-3 gap-1 p-1 bg-slate-950 rounded-xl mb-4 text-xs font-medium">
-        <button type="button" id="batch-rename-tab-replace" class="py-1.5 rounded-lg bg-brand-500 text-white text-center transition-colors">查找替换</button>
-        <button type="button" id="batch-rename-tab-affix" class="py-1.5 rounded-lg text-slate-400 hover:text-white text-center transition-colors">添加前后缀</button>
-        <button type="button" id="batch-rename-tab-sequence" class="py-1.5 rounded-lg text-slate-400 hover:text-white text-center transition-colors">递增序号</button>
-      </div>
-
-      <form id="batch-rename-form" class="space-y-3.5">
-        <!-- 模式 1: 查找替换 -->
-        <div id="batch-rename-panel-replace" class="space-y-3">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">查找内容</label>
-            <input type="text" id="batch-replace-find-input" placeholder="例如: [HD]" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">替换为 (留空则为删除匹配文本)</label>
-            <input type="text" id="batch-replace-to-input" placeholder="例如: [1080P] 或 留空" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
-          </div>
-        </div>
-
-        <!-- 模式 2: 添加前后缀 -->
-        <div id="batch-rename-panel-affix" class="space-y-3 hidden">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">前缀 (加在文件名前)</label>
-            <input type="text" id="batch-prefix-input" placeholder="例如: [动漫] " class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">后缀 (加在扩展名前)</label>
-            <input type="text" id="batch-suffix-input" placeholder="例如: _v2" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
-          </div>
-        </div>
-
-        <!-- 模式 3: 递增序号 -->
-        <div id="batch-rename-panel-sequence" class="space-y-3 hidden">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">基础文件名</label>
-            <input type="text" id="batch-seq-base-input" placeholder="例如: Episode" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">起始序号</label>
-              <input type="number" id="batch-seq-start-input" value="1" min="0" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+      <!-- 主内容双栏：左侧黑胶唱机 + 右侧逐行歌词 -->
+      <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        <div class="w-full md:w-1/2 p-6 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-800/80">
+          <div class="relative w-48 h-48 sm:w-56 sm:h-56 rounded-full bg-black border-4 border-slate-800 shadow-2xl flex items-center justify-center mb-6">
+            <div class="absolute inset-2 rounded-full border border-slate-800/80"></div>
+            <div class="absolute inset-6 rounded-full border border-slate-800/60"></div>
+            <div class="absolute inset-10 rounded-full border border-slate-800/40"></div>
+            <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden border-2 border-purple-400 shadow-lg animate-spin-slow" id="audio-studio-vinyl">
+              <img id="audio-studio-cover" src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=400&q=80" alt="Album Art" class="w-full h-full object-cover" />
             </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">序号位数 (补零)</label>
-              <input type="number" id="batch-seq-digits-input" value="2" min="1" max="5" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500" />
+          </div>
+          <div class="text-center max-w-xs">
+            <h3 class="text-base font-bold truncate text-white" id="audio-track-title">音频标题</h3>
+            <p class="text-xs mt-1 truncate text-slate-400" id="audio-track-artist">Cloudflare Drive Audio Player</p>
+            <div class="flex items-end justify-center gap-1 h-5 mt-3">
+              <div class="w-1 bg-purple-400 audio-bar-1 rounded-full"></div>
+              <div class="w-1 bg-purple-400 audio-bar-2 rounded-full"></div>
+              <div class="w-1 bg-purple-400 audio-bar-3 rounded-full"></div>
+              <div class="w-1 bg-purple-400 audio-bar-4 rounded-full"></div>
+              <div class="w-1 bg-purple-400 audio-bar-2 rounded-full"></div>
             </div>
           </div>
         </div>
 
-        <!-- 实时重命名效果预览 -->
-        <div class="pt-2">
-          <label class="block text-xs text-slate-400 mb-1">效果预览 (前 3 项示例)</label>
-          <div id="batch-rename-preview" class="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] space-y-1 font-mono text-slate-300 max-h-24 overflow-y-auto">
-            <!-- 动态生成预览 -->
+        <!-- 歌词视窗 -->
+        <div class="w-full md:w-1/2 p-6 flex flex-col justify-between overflow-hidden relative">
+          <div class="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-slate-400">
+            <i data-lucide="mic-2" class="w-3.5 h-3.5 text-purple-400"></i>
+            <span>同步歌词 (点击定位)</span>
+          </div>
+          <div class="flex-1 overflow-y-auto lyric-scroll-box space-y-4 py-12 text-sm sm:text-base" id="lyric-container">
+            <div class="text-slate-500 text-center py-10">纯音乐或暂无匹配歌词，沉浸享受无损音质</div>
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-          <button type="button" id="cancel-batch-rename-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-            取消
-          </button>
-          <button type="submit" id="confirm-batch-rename-btn" class="px-4 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold transition-colors">
-            确认重命名
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 批量操作模态框：批量移动 (可选择根目录或输入目标文件夹 ID) -->
-  <div id="batch-move-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
-    <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i data-lucide="folder-input" class="w-4 h-4 text-indigo-400"></i>
-          <span>批量移动</span>
-        </h3>
-        <button id="close-batch-move-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
-          <i data-lucide="x" class="w-4 h-4"></i>
-        </button>
-      </div>
-
-      <p class="text-xs text-slate-400 mb-3" id="batch-move-desc">移动已选项目到目标文件夹</p>
-
-      <form id="batch-move-form" class="space-y-3.5">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">快捷目标</label>
-          <select id="batch-move-quick-select" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 mb-2">
-            <option value="">-- 选择快捷目录或手动输入 --</option>
-            <option value="root">云盘根目录 (Root)</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">目标文件夹 ID (Google Drive Folder ID)</label>
-          <input 
-            type="text" 
-            id="batch-move-folder-id-input" 
-            placeholder="例如: 1AbCdEfGhIjKlMnOpQrStUvWxYz" 
-            required 
-            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 font-mono"
-          />
-        </div>
-
-        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-          <button type="button" id="cancel-batch-move-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-            取消
-          </button>
-          <button type="submit" id="confirm-batch-move-btn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors">
-            确认移动
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 批量删除防误删确认模态框 (默认移入回收站安全兜底) -->
-  <div id="batch-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-4">
-    <div class="w-full max-w-sm bg-slate-900 border border-rose-900/50 rounded-2xl p-5 shadow-2xl">
-      <div class="flex items-center gap-3 pb-3 border-b border-slate-800 mb-3">
-        <div class="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center flex-shrink-0">
-          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
-        </div>
-        <div>
-          <h3 class="text-sm font-bold text-white">批量删除确认</h3>
-          <p class="text-xs text-slate-400" id="batch-delete-count-tip">确认要删除选中的项目吗？</p>
+        <!-- 播放队列抽屉 -->
+        <div id="audio-playlist-drawer" class="hidden absolute inset-y-0 right-0 w-80 bg-slate-900/98 backdrop-blur-xl border-l border-slate-800 p-4 flex flex-col z-20">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+              <i data-lucide="list-ordered" class="w-4 h-4 text-purple-400"></i>
+              <span>播放队列</span>
+            </h4>
+            <button id="close-audio-playlist-btn" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+          </div>
+          <div class="flex-1 overflow-y-auto divide-y divide-slate-800/60 text-xs py-2" id="audio-playlist-items">
+          </div>
         </div>
       </div>
 
-      <div class="p-3 bg-rose-950/20 border border-rose-500/20 rounded-xl text-xs text-rose-300/90 leading-relaxed mb-4">
-        选中的文件和文件夹将默认<strong>移入 Google Drive 回收站</strong>，可在 30 天内通过云盘废纸篓找回恢复。
-      </div>
-
-      <div class="flex items-center justify-end gap-2 pt-1">
-        <button type="button" id="cancel-batch-delete-btn" class="px-3.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-          取消
-        </button>
-        <button type="button" id="confirm-batch-delete-btn" class="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors shadow-lg shadow-rose-600/30">
-          移入回收站
-        </button>
+      <!-- 底部控制条 -->
+      <div class="px-6 py-4 modal-window-header border-t flex flex-col gap-2">
+        <div class="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden cursor-pointer" id="audio-progress-bar-container">
+          <div class="bg-purple-500 h-full w-0 rounded-full relative" id="audio-progress-bar">
+            <div class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-md"></div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span class="font-mono text-[11px]" id="audio-time-label">00:00 / 00:00</span>
+          <div class="flex items-center gap-4">
+            <button id="audio-prev-btn" class="hover:text-purple-400" title="上一曲"><i data-lucide="skip-back" class="w-4 h-4"></i></button>
+            <button id="audio-play-toggle-btn" class="w-9 h-9 rounded-full bg-purple-600 hover:bg-purple-500 flex items-center justify-center text-white shadow-lg shadow-purple-600/30" title="播放/暂停">
+              <i data-lucide="pause" class="w-4 h-4 fill-white" id="audio-play-icon"></i>
+            </button>
+            <button id="audio-next-btn" class="hover:text-purple-400" title="下一曲"><i data-lucide="skip-forward" class="w-4 h-4"></i></button>
+          </div>
+          <div class="flex items-center gap-2">
+            <i data-lucide="volume-2" class="w-4 h-4 text-slate-400"></i>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 浮动批量操作栏 (Floating Batch Action Bar - 选中项目时底部浮现) -->
-  <div 
-    id="batch-action-bar" 
-    class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 transform translate-y-24 opacity-0 pointer-events-none flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl shadow-black/60 select-none text-xs max-w-[95vw]"
-  >
-    <!-- 数量与快捷反选/全选 -->
-    <div class="flex items-center gap-1.5 pr-1.5 sm:pr-2 border-r border-slate-700/80">
-      <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold font-mono text-[11px]" id="batch-selected-count">
-        已选 0 项
-      </span>
-      <button type="button" id="batch-select-all-btn" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer" title="全选当前页">
-        全选
-      </button>
-      <button type="button" id="batch-invert-selection-btn" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer" title="反选当前页">
-        反选
-      </button>
-      <button type="button" id="batch-clear-selection-btn" class="text-slate-400 hover:text-rose-400 text-xs transition-colors p-1" title="清空选择并退出多选">
-        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-      </button>
+  <!-- 全能沉浸式文档查看器 (PDF / Markdown / 代码 + 常驻下载) -->
+  <div id="doc-viewer-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
+    <div class="relative w-full max-w-5xl h-[88vh] max-h-[820px] rounded-2xl modal-window-card flex flex-col overflow-hidden">
+      <!-- 文档工具栏 -->
+      <div class="flex items-center justify-between px-4 py-2.5 modal-window-header text-xs select-none">
+        <div class="flex items-center gap-2 truncate min-w-0 pr-3">
+          <i data-lucide="file-text" class="w-4 h-4 text-blue-500 flex-shrink-0" id="doc-viewer-icon"></i>
+          <span id="doc-viewer-title" class="font-semibold truncate text-xs sm:text-sm text-white">文档名称</span>
+          <span id="doc-type-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/20 text-blue-400 border border-blue-500/30">DOC</span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <a id="doc-viewer-download-btn" href="#" download class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 text-[11px] font-medium shadow-sm transition-colors" title="下载原文件">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>下载源文件</span>
+          </a>
+          <button id="close-doc-viewer-btn" class="p-1 rounded-lg text-slate-400 hover:text-white" title="关闭 (Esc)"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+      </div>
+
+      <!-- 文档内容渲染区 -->
+      <div class="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center bg-slate-950/60" id="doc-viewer-content">
+        <div id="doc-pdf-container" class="w-full h-full flex flex-col items-center justify-center">
+          <iframe id="doc-pdf-iframe" class="w-full h-full rounded-xl border border-slate-800 bg-white" src="about:blank"></iframe>
+        </div>
+        <div id="doc-text-container" class="hidden w-full max-w-3xl p-6 sm:p-8 rounded-xl border border-slate-800 bg-slate-900 shadow-xl overflow-x-auto text-xs sm:text-sm font-mono text-slate-200 whitespace-pre-wrap leading-relaxed"></div>
+      </div>
     </div>
-
-    <!-- 批量重命名 -->
-    <button 
-      type="button" 
-      id="batch-rename-trigger-btn" 
-      class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition-colors cursor-pointer"
-      title="批量重命名"
-    >
-      <i data-lucide="edit-3" class="w-3.5 h-3.5 text-brand-400"></i>
-      <span class="hidden sm:inline">批量重命名</span>
-    </button>
-
-    <!-- 批量移动 -->
-    <button 
-      type="button" 
-      id="batch-move-trigger-btn" 
-      class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-medium transition-colors cursor-pointer"
-      title="批量移动到目录"
-    >
-      <i data-lucide="folder-input" class="w-3.5 h-3.5 text-indigo-400"></i>
-      <span class="hidden sm:inline">批量移动</span>
-    </button>
-
-    <!-- 批量删除 -->
-    <button 
-      type="button" 
-      id="batch-delete-trigger-btn" 
-      class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 font-medium border border-rose-500/30 transition-colors cursor-pointer"
-      title="批量移入回收站"
-    >
-      <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-400"></i>
-      <span class="hidden sm:inline">批量删除</span>
-    </button>
   </div>
 
   <!-- 轻量全局 Toast 提示 -->

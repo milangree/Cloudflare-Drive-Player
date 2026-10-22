@@ -1,6 +1,72 @@
-/* 全局与播放器视觉增强 */
-:root {
-  --plyr-color-main: #f97316; /* 橙色强调色 */
+/* ==========================================================================
+   Cloudflare Drive Player - 核心设计 Token 规范与双主题系统
+   ========================================================================== */
+:root, [data-theme="dark"] {
+  /* 画布与表面体系 */
+  --surface-app: #080c14;
+  --surface-canvas: #030712;
+  --surface-panel: rgba(15, 23, 42, 0.85);
+  --surface-card: rgba(30, 41, 59, 0.65);
+  --surface-card-hover: rgba(51, 65, 85, 0.85);
+  --surface-elevated: #0f172a;
+  --surface-modal: #0b1120;
+  --surface-modal-header: rgba(15, 23, 42, 0.95);
+  --surface-input: rgba(15, 23, 42, 0.80);
+  
+  /* 边框体系 */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-brand: rgba(249, 115, 22, 0.45);
+  
+  /* 排版文字体系 */
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+  
+  /* 阴影与微光 */
+  --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --card-shadow-hover: 0 16px 36px -4px rgba(0, 0, 0, 0.65);
+  --modal-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+  --motion-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 排版常量：14px 字号 / 20px 整数行高 / 40px 双行等高 / 2px 下伸缓冲 */
+  --fs-card-title: 14px;
+  --lh-card-title: 20px;
+  --h-card-title-2l: 40px;
+  --pad-title-buffer: 2px;
+  --plyr-color-main: #f97316;
+}
+
+[data-theme="light"] {
+  /* 浅色模式体系：温润象牙冷灰底 + 纯白微通透卡片 + 墨水深蓝黑字 (WCAG AAA 15.8:1) */
+  --surface-app: #e2e8f0;
+  --surface-canvas: #f8fafc;
+  --surface-panel: rgba(255, 255, 255, 0.90);
+  --surface-card: rgba(255, 255, 255, 0.96);
+  --surface-card-hover: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-modal: #ffffff;
+  --surface-modal-header: rgba(248, 250, 252, 0.95);
+  --surface-input: #f1f5f9;
+  
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --border-brand: rgba(234, 88, 12, 0.45);
+  
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #94a3b8;
+  
+  --card-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
+  --card-shadow-hover: 0 16px 32px -4px rgba(15, 23, 42, 0.12), 0 4px 12px -2px rgba(15, 23, 42, 0.05);
+  --modal-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+}
+
+/* 全局基底样式与主题渡越 */
+body {
+  background-color: var(--surface-app);
+  color: var(--text-main);
+  transition: background-color 0.28s ease, color 0.28s ease;
 }
 
 /* 优雅滚动条 */
@@ -9,36 +75,120 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--surface-canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--border-strong);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--border-brand);
 }
 
 /* 毛玻璃与卡片浮动效果 */
 .glass-panel {
-  background: rgba(17, 24, 39, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-panel) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--text-main);
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.5);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--surface-card) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--card-shadow);
+  color: var(--text-main);
+  transition: transform 0.25s var(--motion-spring), box-shadow 0.25s var(--motion-spring), border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .glass-card:hover {
-  background: rgba(30, 41, 59, 0.85);
-  border-color: rgba(249, 115, 22, 0.4);
+  background: var(--surface-card-hover) !important;
+  border-color: var(--border-brand) !important;
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--card-shadow-hover);
+}
+
+/* ==========================================================================
+   【物理排满折行】标题独占 100% 宽度 + 绝不提前空行断字 + 严格双行打 ...
+   ========================================================================== */
+.card-title-v3 {
+  width: 100%;
+  min-width: 0;
+  font-size: var(--fs-card-title, 14px);
+  line-height: var(--lh-card-title, 20px);
+  height: var(--h-card-title-2l, 40px);     /* 严格锁定 40px 高度，保证同排卡片绝对等高 */
+  max-height: var(--h-card-title-2l, 40px);
+  font-weight: 500;
+  color: var(--text-main);
+  
+  /* 核心物理断行规则：第一行每一个字符排满到最后一像素才折行！ */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-break: anywhere;
+  white-space: normal;
+  
+  /* 严格 2 行截断，未显示完的在末尾以 ... 代替 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  
+  /* 底部 2px 缓冲，消除 Windows DPI 缩放下 g, j, p, y 字母截脚 */
+  padding-bottom: var(--pad-title-buffer, 2px);
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+
+/* 移动端强制单列大卡片 (保障封面 16:9 画幅与标题可读性) */
+@media (max-width: 639px) {
+  #grid-view {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+/* 悬停浮动气泡 (Tooltip Popover) */
+.title-tooltip-popover {
+  position: absolute;
+  left: 0;
+  top: -8px;
+  transform: translateY(-100%);
+  z-index: 50;
+  width: max-content;
+  max-width: 320px;
+  padding: 10px 14px;
+  background: var(--surface-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-brand);
+  border-radius: 12px;
+  box-shadow: var(--modal-shadow);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-main);
+  word-break: break-all;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--motion-spring), transform 0.18s var(--motion-spring);
+}
+.group:hover .title-tooltip-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-100%) translateY(-4px);
+  transition-delay: 150ms;
+}
+
+/* 列表行悬停平滑过渡 */
+.file-row {
+  transition: background-color 0.15s ease;
+  color: var(--text-main);
+}
+.file-row:hover {
+  background-color: var(--surface-card-hover);
 }
 
 /* 播放器容器动画 */
@@ -51,6 +201,61 @@
   transform: scale(1);
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
+
+/* 模态视窗通用风格 */
+.modal-window-card {
+  background-color: var(--surface-modal) !important;
+  border: 1px solid var(--border-strong) !important;
+  color: var(--text-main);
+  box-shadow: var(--modal-shadow);
+}
+.modal-window-header {
+  background-color: var(--surface-modal-header) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  color: var(--text-main);
+}
+
+/* 黑胶唱片旋转动画 */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 18s linear infinite;
+}
+.spin-paused {
+  animation-play-state: paused !important;
+}
+
+/* 歌词视窗平滑滚动与高光焦点 */
+.lyric-scroll-box {
+  scroll-behavior: smooth;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+}
+.lyric-line {
+  transition: all 0.3s var(--motion-spring);
+  opacity: 0.45;
+  transform: scale(0.97);
+  transform-origin: left center;
+}
+.lyric-line.active {
+  opacity: 1;
+  transform: scale(1.06);
+  color: var(--text-main);
+  font-weight: 700;
+  text-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+}
+
+/* 音频跳动指示条 */
+@keyframes bar-pulse {
+  0%, 100% { height: 4px; }
+  50% { height: 22px; }
+}
+.audio-bar-1 { animation: bar-pulse 1.1s ease-in-out infinite; }
+.audio-bar-2 { animation: bar-pulse 1.4s ease-in-out infinite 0.2s; }
+.audio-bar-3 { animation: bar-pulse 0.9s ease-in-out infinite 0.4s; }
+.audio-bar-4 { animation: bar-pulse 1.3s ease-in-out infinite 0.1s; }
 
 /* Artplayer 播放器与画幅适配 (统一标准容器与无损黑边自适应规范) */
 .art-video-player {
@@ -95,13 +300,13 @@
   height: 100% !important;
   max-width: 100% !important;
   max-height: 100% !important;
-  object-fit: contain !important; /* 核心规范：100% 保持原生宽高比，任何分辨率/画幅(4:3, 16:9, 21:9, 竖屏)均保持无损黑边自适应 */
+  object-fit: contain !important; /* 核心规范：100% 保持原生宽高比，任何分辨率/画幅均保持无损黑边自适应 */
   margin: auto !important;
   background: #000 !important;
   display: block !important;
 }
 
-/* Artplayer 友好通知提示层 (针对 MKV/音频/解码异常居中高可见度提醒) */
+/* Artplayer 友好通知提示层 */
 .art-video-player .art-notice {
   z-index: 50 !important;
   max-width: 85% !important;
@@ -119,7 +324,7 @@
   color: #fff !important;
 }
 
-/* Artplayer 字幕渲染美化 (对齐 OpenList 影音体验) */
+/* Artplayer 字幕渲染美化 */
 .art-video-player .art-subtitle {
   font-size: 1.25rem !important;
   font-weight: 600 !important;
@@ -137,63 +342,16 @@
   }
 }
 
-/* 列表行悬停平滑过渡 */
-.file-row {
-  transition: background-color 0.15s ease;
-}
-.file-row:hover {
-  background-color: rgba(255, 255, 255, 0.04);
-}
-
-/* 浮动批量操作栏动效与多选卡片高亮 */
-#batch-action-bar {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
-}
-
-.item-selected-row {
-  background-color: rgba(14, 165, 233, 0.08) !important;
-}
-
-.item-selected-card {
-  border-color: rgba(14, 165, 233, 0.6) !important;
-  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.4), 0 8px 20px -4px rgba(14, 165, 233, 0.15) !important;
-}
-
-/* OpenList 多选模式范式样式 (基于 body.select-mode-active 状态分流) */
-/* 默认非多选状态下，列表与网格中的复选框保持隐藏或仅轻量感知 */
-.select-mode-active #view-container .item-checkbox-wrapper,
-.select-mode-active #list-tbody .item-checkbox-wrapper {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-/* 多选态下整行/卡片鼠标指针指示为可选中 */
-.select-mode-active .glass-card,
-.select-mode-active .file-row {
-  cursor: pointer !important;
-  user-select: none !important;
-}
-
-/* 多选态下文件夹专属穿透按钮 (用于移动端或免快捷键快速进入) */
-.folder-penetrate-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.5rem;
-  font-size: 11px;
-  background-color: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(51, 65, 85, 0.8);
-  color: #94a3b8;
-  transition: all 0.15s ease;
-}
-.folder-penetrate-btn:hover {
-  background-color: rgba(14, 165, 233, 0.2);
-  border-color: rgba(14, 165, 233, 0.5);
-  color: #38bdf8;
-}
-
-/* 底部操作栏安全区适配 (兼容 iPhone 等全面屏) */
-#batch-action-bar {
-  bottom: max(1.5rem, env(safe-area-inset-bottom, 1.5rem)) !important;
+/* 减弱动效回退保障 */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin-slow,
+  .audio-bar-1, .audio-bar-2, .audio-bar-3, .audio-bar-4 {
+    animation: none !important;
+  }
 }
