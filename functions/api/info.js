@@ -32,6 +32,7 @@ export async function onRequestGet(context) {
     }
 
     const customSiteName = sysConfig.siteName ? sysConfig.siteName.trim() : "";
+    const customSiteSubtitle = sysConfig.siteSubtitle !== undefined ? sysConfig.siteSubtitle.trim() : "";
     const displaySiteName = customSiteName || `${rootName} - Drive Player`;
 
     return new Response(
@@ -39,6 +40,7 @@ export async function onRequestGet(context) {
         success: true,
         configured: true,
         siteName: displaySiteName,
+        siteSubtitle: customSiteSubtitle,
         rootFolderId,
         rootName,
         clientEmail: creds.clientEmail ? creds.clientEmail.replace(/(.{3}).*(@.*)/, "$1***$2") : null,

@@ -33,17 +33,6 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- 自定义样式 -->
   <link rel="stylesheet" href="/css/style.css">
-  <script>
-    (function() {
-      const theme = localStorage.getItem('app_theme') || 'dark';
-      document.documentElement.setAttribute('data-theme', theme);
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-    })();
-  </script>
 </head>
 <body class="min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
 
@@ -56,13 +45,10 @@
           <i data-lucide="play" class="w-5 h-5 text-white fill-white"></i>
         </div>
         <div>
-          <div class="flex items-center gap-1.5">
-            <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2" id="site-title">
-              Cloudflare Drive
-            </h1>
-            <span class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-brand-500/15 text-brand-500 border border-brand-500/30">Player</span>
-          </div>
-          <p class="text-xs text-slate-400 hidden sm:block">影音娱乐与通用文档多端枢纽</p>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2" id="site-title">
+            Cloudflare Drive
+          </h1>
+          <p class="text-xs text-slate-400 hidden sm:block" id="site-subtitle">影音娱乐与通用文档多端枢纽</p>
         </div>
       </div>
 
@@ -83,15 +69,6 @@
 
         <button id="refresh-btn" title="刷新目录" class="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-colors">
           <i data-lucide="rotate-cw" class="w-4 h-4"></i>
-        </button>
-
-        <button id="view-mode-btn" title="切换视图" class="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-colors">
-          <i data-lucide="layout-grid" class="w-4 h-4" id="view-icon"></i>
-        </button>
-
-        <!-- 主题切换按钮 (暗色/浅色) -->
-        <button id="theme-toggle-btn" title="切换暗色/浅色模式" class="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-colors">
-          <i data-lucide="sun-moon" class="w-4 h-4"></i>
         </button>
 
         <!-- 后台管理按钮 -->
@@ -150,23 +127,8 @@
       <div class="h-32 bg-slate-900/60 rounded-xl border border-slate-800/50"></div>
     </div>
 
-    <!-- 内容展示容器：网格模式 (默认) -->
+    <!-- 内容展示容器：纯净网格模式 -->
     <div id="grid-view" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
-
-    <!-- 内容展示容器：列表模式 -->
-    <div id="list-view" class="hidden overflow-hidden rounded-xl border border-slate-800/80 bg-slate-900/30">
-      <table class="w-full text-left text-sm text-slate-300">
-        <thead class="bg-slate-900/90 text-xs uppercase text-slate-400 border-b border-slate-800">
-          <tr>
-            <th scope="col" class="px-4 py-3 font-semibold">文件名</th>
-            <th scope="col" class="px-4 py-3 font-semibold hidden md:table-cell">大小</th>
-            <th scope="col" class="px-4 py-3 font-semibold hidden sm:table-cell">修改时间</th>
-            <th scope="col" class="px-4 py-3 text-right font-semibold">操作</th>
-          </tr>
-        </thead>
-        <tbody id="list-tbody" class="divide-y divide-slate-800/60"></tbody>
-      </table>
-    </div>
 
     <!-- 空目录或无结果提示 -->
     <div id="empty-state" class="hidden flex-col items-center justify-center py-20 text-center">
@@ -477,6 +439,16 @@
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
               />
               <p class="text-[10px] text-slate-500 mt-1">留空时自动使用 Google 云端根文件夹名称</p>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">网页名称下方副标题 / 描述</label>
+              <input 
+                type="text" 
+                id="cfg-site-subtitle" 
+                placeholder="例如: 影音娱乐与通用文档多端枢纽" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+              />
+              <p class="text-[10px] text-slate-500 mt-1">显示在网页顶栏主名称下方，留空则使用默认介绍</p>
             </div>
           </div>
 

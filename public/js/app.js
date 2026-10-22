@@ -10,7 +10,7 @@ const state = {
   breadcrumbs: [{ id: "root", name: "主云盘" }],
   items: [],
   filteredItems: [],
-  viewMode: localStorage.getItem("view_mode") || "grid",
+  viewMode: "grid",
   sortBy: "name_asc",
   searchQuery: "",
   pageSize: localStorage.getItem("page_size") === "all" ? "all" : (parseInt(localStorage.getItem("page_size"), 10) || 30),
@@ -39,6 +39,7 @@ const state = {
 // DOM 元素引用
 const dom = {
   siteTitle: document.getElementById("site-title"),
+  siteSubtitle: document.getElementById("site-subtitle"),
   btnHome: document.getElementById("btn-home"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   fileCount: document.getElementById("file-count"),
@@ -50,16 +51,11 @@ const dom = {
   searchInput: document.getElementById("search-input"),
   clearSearchBtn: document.getElementById("clear-search-btn"),
   refreshBtn: document.getElementById("refresh-btn"),
-  viewModeBtn: document.getElementById("view-mode-btn"),
-  viewIcon: document.getElementById("view-icon"),
-  themeToggleBtn: document.getElementById("theme-toggle-btn"),
   adminEntryBtn: document.getElementById("admin-entry-btn"),
   toggleSelectModeBtn: document.getElementById("toggle-select-mode-btn"),
   selectModeIcon: document.getElementById("select-mode-icon"),
   loadingSkeleton: document.getElementById("loading-skeleton"),
   gridView: document.getElementById("grid-view"),
-  listView: document.getElementById("list-view"),
-  listTbody: document.getElementById("list-tbody"),
   selectAllCheckbox: document.getElementById("select-all-checkbox"),
   emptyState: document.getElementById("empty-state"),
   // 访问密码模态框
@@ -79,6 +75,7 @@ const dom = {
   kvStatusBadge: document.getElementById("kv-status-badge"),
   adminConfigForm: document.getElementById("admin-config-form"),
   cfgSiteName: document.getElementById("cfg-site-name"),
+  cfgSiteSubtitle: document.getElementById("cfg-site-subtitle"),
   cfgRequirePassword: document.getElementById("cfg-require-password"),
   cfgAccessPasswordContainer: document.getElementById("cfg-access-password-container"),
   cfgAccessPassword: document.getElementById("cfg-access-password"),
@@ -396,6 +393,13 @@ async function checkSystemInfo() {
         dom.siteTitle.textContent = data.siteName;
         document.title = data.siteName;
       }
+      if (dom.siteSubtitle) {
+        if (data.siteSubtitle) {
+          dom.siteSubtitle.textContent = data.siteSubtitle;
+        } else {
+          dom.siteSubtitle.textContent = "影音娱乐与通用文档多端枢纽";
+        }
+      }
 
       const rootId = data.rootFolderId || "root";
       const rootName = data.rootName || "主云盘";
@@ -690,6 +694,7 @@ async function loadAdminDashboard() {
     const data = await res.json();
     if (data.success && data.config) {
       dom.cfgSiteName.value = data.config.siteName || "";
+      if (dom.cfgSiteSubtitle) dom.cfgSiteSubtitle.value = data.config.siteSubtitle || "";
       dom.cfgRequirePassword.checked = Boolean(data.config.requirePassword);
       dom.cfgAccessPassword.value = data.config.accessPassword || "";
       dom.cfgNewAdminPassword.value = "";
@@ -1309,7 +1314,6 @@ function renderItems() {
     dom.emptyState.classList.remove("hidden");
     dom.emptyState.classList.add("flex");
     dom.gridView.innerHTML = "";
-    dom.listTbody.innerHTML = "";
     if (dom.paginationBar) dom.paginationBar.classList.add("hidden");
     return;
   }
@@ -1336,14 +1340,9 @@ function renderItems() {
     if (dom.paginationBar) dom.paginationBar.classList.add("hidden");
   }
 
-  if (state.viewMode === "grid") {
+  if (dom.gridView) {
     dom.gridView.classList.remove("hidden");
-    dom.listView.classList.add("hidden");
     renderGridView(pageItems);
-  } else {
-    dom.gridView.classList.add("hidden");
-    dom.listView.classList.remove("hidden");
-    renderListView(pageItems);
   }
 
   if (window.lucide) {
@@ -1483,83 +1482,6 @@ function renderGridView(items) {
     .join("");
 
   bindItemEvents(dom.gridView);
-}
-
-// 渲染列表视图 (不显示格式信息和分辨率标签，保持极简纯净排版)
-function renderListView(items) {
-  dom.listTbody.innerHTML = items
-    .map((item) => {
-      const { icon, color } = getFileIcon(item);
-      const isMedia = item.isVideo || item.isAudio;
-      const streamUrl = `/api/stream/${item.id}`;
-      const downloadUrl = `/api/download/${item.id}?filename=${encodeURIComponent(item.name)}`;
-      const thumbUrl = getHighResThumb(item, 120);
-
-      return `
-        <tr class="file-row group transition-colors cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          <td class="px-4 py-2.5 flex items-center gap-3 min-w-0">
-            ${
-              thumbUrl && (item.isVideo || item.isImage)
-                ? `<div class="w-10 h-7 rounded overflow-hidden bg-slate-900 border border-slate-800 flex-shrink-0 cursor-pointer media-action-trigger hover:opacity-80 transition-opacity" data-id="${item.id}">
-                    <img src="${thumbUrl}" alt="" class="w-full h-full object-cover">
-                  </div>`
-                : `<div class="${color} flex-shrink-0 w-5 h-5 flex items-center justify-center ${item.isFolder ? "cursor-pointer folder-enter-trigger" : ""}" data-id="${item.id}">
-                    <i data-lucide="${icon}" class="w-4 h-4"></i>
-                  </div>`
-            }
-            <span class="font-medium text-slate-200 break-all leading-normal ${item.isFolder ? "cursor-pointer hover:text-brand-500 folder-enter-trigger" : "cursor-pointer hover:text-brand-500"}" data-id="${item.id}">
-              ${escapeHtml(item.name)}
-            </span>
-            ${
-              item.isFolder
-                ? `<span class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex-shrink-0">${item.itemCount || 0} 个文件</span>`
-                : ""
-            }
-          </td>
-          <td class="px-4 py-2.5 text-xs text-slate-400 hidden md:table-cell">
-            ${formatBytes(item.size)}
-          </td>
-          <td class="px-4 py-2.5 text-xs text-slate-500 hidden sm:table-cell">
-            ${formatDate(item.modifiedTime)}
-          </td>
-          <td class="px-4 py-2.5 text-right">
-            <div class="flex items-center justify-end gap-1">
-              ${
-                item.isFolder
-                  ? `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger mr-1" data-id="${item.id}" title="进入文件夹">
-                      <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
-                      <span>打开</span>
-                    </button>`
-                  : ""
-              }
-              ${
-                !item.isFolder
-                  ? `<button class="p-1.5 hover:text-brand-500 rounded hover:bg-brand-500/10 text-slate-400 file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载原文件">
-                      <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button class="p-1.5 hover:text-slate-200 rounded hover:bg-slate-800 text-slate-400 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
-                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-              ${
-                state.isAdmin
-                  ? `<button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 text-slate-400 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="重命名">
-                      <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 text-slate-400 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="删除">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
-            </div>
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  bindItemEvents(dom.listTbody);
 }
 
 // 触发文件原生静默下载，不打开任何空白新标签页或弹窗
@@ -1941,27 +1863,21 @@ function toggleAutoPlayNext() {
   showToast(state.autoPlayNext ? "已开启同名连续剧自动连播" : "已关闭自动连播");
 }
 
-// 主题系统管理 (暗色/浅色)
+// 主题系统管理 (暗黑模式)
 function initTheme() {
-  const currentTheme = localStorage.getItem("app_theme") || "dark";
-  applyTheme(currentTheme);
+  document.documentElement.setAttribute("data-theme", "dark");
+  document.documentElement.classList.add("dark");
+  localStorage.setItem("app_theme", "dark");
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  if (theme === "dark") {
-    document.documentElement.classList.add("dark");
-  } else {
-    document.documentElement.classList.remove("dark");
-  }
-  localStorage.setItem("app_theme", theme);
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", "dark");
+  document.documentElement.classList.add("dark");
+  localStorage.setItem("app_theme", "dark");
 }
 
 function toggleTheme() {
-  const current = document.documentElement.getAttribute("data-theme") || "dark";
-  const next = current === "dark" ? "light" : "dark";
-  applyTheme(next);
-  showToast(`已切换至${next === "dark" ? "暗色模式 🌙" : "浅色模式 ☀️"}`);
+  applyTheme();
 }
 
 // ==========================================
@@ -3371,7 +3287,6 @@ function showLoading(show) {
   if (show) {
     dom.loadingSkeleton.classList.remove("hidden");
     dom.gridView.classList.add("hidden");
-    dom.listView.classList.add("hidden");
     dom.emptyState.classList.add("hidden");
   } else {
     dom.loadingSkeleton.classList.add("hidden");
@@ -3389,14 +3304,6 @@ function setupEventListeners() {
   // 刷新按钮
   dom.refreshBtn.addEventListener("click", () => {
     loadFolder(state.currentFolderId, state.searchQuery);
-  });
-
-  // 视图模式切换
-  dom.viewModeBtn.addEventListener("click", () => {
-    state.viewMode = state.viewMode === "grid" ? "list" : "grid";
-    localStorage.setItem("view_mode", state.viewMode);
-    dom.viewIcon.setAttribute("data-lucide", state.viewMode === "grid" ? "layout-grid" : "list");
-    renderItems();
   });
 
   // 排序切换
@@ -3667,6 +3574,7 @@ function setupEventListeners() {
     dom.adminConfigForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const siteName = dom.cfgSiteName.value.trim();
+      const siteSubtitle = dom.cfgSiteSubtitle ? dom.cfgSiteSubtitle.value.trim() : "";
       const requirePassword = dom.cfgRequirePassword.checked;
       const accessPassword = dom.cfgAccessPassword.value.trim();
       const newAdminPassword = dom.cfgNewAdminPassword.value.trim();
@@ -3685,6 +3593,7 @@ function setupEventListeners() {
           },
           body: JSON.stringify({
             siteName,
+            siteSubtitle,
             requirePassword,
             accessPassword,
             newAdminPassword,
@@ -3697,6 +3606,9 @@ function setupEventListeners() {
           if (siteName) {
             dom.siteTitle.textContent = siteName;
             document.title = siteName;
+          }
+          if (dom.siteSubtitle) {
+            dom.siteSubtitle.textContent = siteSubtitle || "影音娱乐与通用文档多端枢纽";
           }
           if (newAdminPassword) {
             dom.cfgNewAdminPassword.value = "";
@@ -3910,11 +3822,6 @@ function setupEventListeners() {
     }
   });
 
-  // 主题切换绑定
-  if (dom.themeToggleBtn) {
-    dom.themeToggleBtn.addEventListener("click", toggleTheme);
-  }
-
   // 音频专注视窗事件绑定
   if (dom.closeAudioStudioBtn) {
     dom.closeAudioStudioBtn.addEventListener("click", closeAudioStudio);
@@ -3967,9 +3874,6 @@ function setupEventListeners() {
 async function init() {
   initTheme();
   setupEventListeners();
-  if (state.viewMode === "list") {
-    dom.viewIcon.setAttribute("data-lucide", "list");
-  }
   await checkSystemInfo();
 }
 

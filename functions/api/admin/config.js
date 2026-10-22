@@ -22,6 +22,7 @@ export async function onRequest(context) {
         success: true,
         config: {
           siteName: config.siteName,
+          siteSubtitle: config.siteSubtitle || "",
           requirePassword: Boolean(config.requirePassword),
           accessPassword: config.accessPassword,
           hasAdminPassword: Boolean(config.adminPassword),
@@ -36,10 +37,11 @@ export async function onRequest(context) {
   if (request.method === "POST") {
     try {
       const body = await request.json();
-      const { siteName, requirePassword, accessPassword, newAdminPassword } = body;
+      const { siteName, siteSubtitle, requirePassword, accessPassword, newAdminPassword } = body;
 
       const updateData = {};
       if (typeof siteName === "string") updateData.siteName = siteName.trim();
+      if (typeof siteSubtitle === "string") updateData.siteSubtitle = siteSubtitle.trim();
       if (typeof requirePassword === "boolean") updateData.requirePassword = requirePassword;
       if (typeof accessPassword === "string") updateData.accessPassword = accessPassword.trim();
       if (typeof newAdminPassword === "string" && newAdminPassword.trim()) {
