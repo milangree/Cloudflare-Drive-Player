@@ -151,35 +151,91 @@ body {
   }
 }
 
-/* 悬停浮动气泡 (Tooltip Popover) */
-.title-tooltip-popover {
-  position: absolute;
-  left: 0;
-  top: -8px;
-  transform: translateY(-100%);
-  z-index: 50;
-  width: max-content;
-  max-width: 320px;
-  padding: 10px 14px;
-  background: var(--surface-panel);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-brand);
-  border-radius: 12px;
-  box-shadow: var(--modal-shadow);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-main);
-  word-break: break-all;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s var(--motion-spring), transform 0.18s var(--motion-spring);
+/* 缩略图与海报容器深浅双主题适配 (修复浅色模式缩略图黑边与异常底色) */
+.media-poster-box {
+  background: var(--surface-input);
+  border: 1px solid var(--border-subtle);
+  transition: border-color 0.2s ease;
 }
-.group:hover .title-tooltip-popover {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(-100%) translateY(-4px);
-  transition-delay: 150ms;
+.glass-card:hover .media-poster-box {
+  border-color: var(--border-brand);
+}
+
+/* 浅色主题下统一修正常用组件控件背景与文本 (彻底消除深浅混杂、对比度异常) */
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: var(--surface-input) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-strong) !important;
+}
+
+[data-theme="light"] select option {
+  background-color: var(--surface-card) !important;
+  color: var(--text-main) !important;
+}
+
+[data-theme="light"] .thumb-fallback {
+  background-color: var(--surface-input) !important;
+  color: var(--text-muted) !important;
+}
+
+[data-theme="light"] header.glass-panel button,
+[data-theme="light"] .modal-window-card button:not(.bg-brand-500):not(.bg-purple-600):not(.bg-blue-600):not(.bg-rose-600) {
+  background-color: var(--surface-input) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] header.glass-panel button:hover {
+  background-color: var(--surface-card-hover) !important;
+  border-color: var(--border-strong) !important;
+}
+
+[data-theme="light"] #list-view {
+  background-color: var(--surface-card) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] #list-view thead {
+  background-color: var(--surface-canvas) !important;
+  color: var(--text-muted) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+[data-theme="light"] .file-row {
+  color: var(--text-main) !important;
+  border-bottom-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] .file-row:hover {
+  background-color: var(--surface-card-hover) !important;
+}
+
+[data-theme="light"] #doc-viewer-content {
+  background-color: var(--surface-canvas) !important;
+}
+
+[data-theme="light"] #doc-text-container {
+  background-color: var(--surface-card) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] #audio-playlist-drawer {
+  background-color: var(--surface-modal) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-100 {
+  color: var(--text-main) !important;
+}
+
+[data-theme="light"] .text-slate-400,
+[data-theme="light"] .text-slate-500 {
+  color: var(--text-muted) !important;
 }
 
 /* 列表行悬停平滑过渡 */
