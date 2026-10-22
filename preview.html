@@ -181,35 +181,14 @@
       margin-bottom: 8px;
     }
 
-    /* 悬停浮动气泡 (Tooltip Popover) */
-    .title-tooltip-popover {
-      position: absolute;
-      left: 0;
-      top: -8px;
-      transform: translateY(-100%);
-      z-index: 50;
-      width: max-content;
-      max-width: 340px;
-      padding: 10px 14px;
-      background: var(--surface-panel);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border-brand);
-      border-radius: 12px;
-      box-shadow: var(--modal-shadow);
-      font-size: 12px;
-      line-height: 1.45;
-      color: var(--text-main);
-      word-break: break-all;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.18s var(--motion-spring), transform 0.18s var(--motion-spring);
+    /* 缩略图与海报容器深浅双主题适配 (修复浅色模式缩略图黑边与异常底色) */
+    .media-poster-box {
+      background: var(--surface-input);
+      border: 1px solid var(--border-subtle);
+      transition: border-color 0.2s ease;
     }
-    .group:hover .title-tooltip-popover {
-      opacity: 1;
-      pointer-events: auto;
-      transform: translateY(-100%) translateY(-4px);
-      transition-delay: 150ms;
+    .glass-card:hover .media-poster-box {
+      border-color: var(--border-brand);
     }
 
     /* 模态视窗双主题适配 */
@@ -411,21 +390,8 @@
           
           <!-- 卡片 1: 复杂长点号影视原盘 (点击卡片直接打开播放器；点击右下角按钮直接下载) -->
           <div class="glass-card rounded-2xl p-3.5 cursor-pointer relative group flex flex-col justify-between" onclick="openVideoPlayer('奥本海默.Oppenheimer.2023.IMAX.2160p.UHD.HDR.x265.10bit.DTS-HD.MA.5.1-NOGRP.mkv')">
-            
-            <!-- 悬停气泡 (带一键下载入口) -->
-            <div class="title-tooltip-popover">
-              <div class="text-[10px] uppercase font-mono tracking-wider mb-1" style="color: var(--text-muted)">完整文件名 (点击卡片可播放)</div>
-              <div class="font-medium select-all mb-2.5 break-all" style="color: var(--text-main)">奥本海默.Oppenheimer.2023.IMAX.2160p.UHD.HDR.x265.10bit.DTS-HD.MA.5.1-NOGRP.mkv</div>
-              <button 
-                onclick="triggerDownload(event, '奥本海默.Oppenheimer.2023.IMAX.2160p.mkv', '24.8 GB')" 
-                class="w-full py-1.5 px-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>立即下载原片 (24.8 GB)</span>
-              </button>
-            </div>
-
             <!-- 16:9 封面：手机单列下具备 340px+ 宽阔大画幅 -->
-            <div class="relative w-full aspect-video rounded-xl bg-slate-900 overflow-hidden mb-2.5 border flex items-center justify-center group-hover:border-brand-500/40 transition-all flex-shrink-0" style="border-color: var(--border-subtle)">
+            <div class="media-poster-box relative w-full aspect-video rounded-xl overflow-hidden mb-2.5 flex items-center justify-center flex-shrink-0">
               <img src="https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=800&q=80" alt="Poster" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80 group-hover:opacity-100" />
               <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
               
@@ -467,19 +433,7 @@
 
           <!-- 卡片 2: 音乐文件 (点击卡片直接打开黑胶+歌词+播放列表视窗；点击右下角按钮直接下载) -->
           <div class="glass-card rounded-2xl p-3.5 cursor-pointer relative group flex flex-col justify-between" onclick="openAudioStudio()">
-            
-            <div class="title-tooltip-popover">
-              <div class="text-[10px] uppercase font-mono tracking-wider mb-1" style="color: var(--text-muted)">无损音频 (点击直接播放)</div>
-              <div class="font-medium select-all mb-2.5 break-all" style="color: var(--text-main)">Hans Zimmer - Day One (Interstellar Original Motion Picture Soundtrack Hi-Res 96kHz 24bit Master).flac</div>
-              <button 
-                onclick="triggerDownload(event, 'Hans Zimmer - Day One.flac', '48.6 MB')" 
-                class="w-full py-1.5 px-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>立即下载 FLAC (48.6 MB)</span>
-              </button>
-            </div>
-
-            <div class="relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
+            <div class="media-poster-box relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
               <div class="w-14 h-14 rounded-full bg-black/80 border-2 border-purple-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                 <i data-lucide="disc" class="w-7 h-7 text-purple-400 animate-spin-slow"></i>
               </div>
@@ -512,20 +466,8 @@
 
           <!-- 卡片 3: PDF 文档文件 (点击卡片直接打开全能阅读器；点击右下角按钮直接下载) -->
           <div class="glass-card rounded-2xl p-3.5 cursor-pointer relative group flex flex-col justify-between" onclick="openDocViewer('Cloudflare_Edge_Streaming_Architecture_Whitepaper_v2.4.pdf', 'pdf')">
-            
-            <div class="title-tooltip-popover">
-              <div class="text-[10px] uppercase font-mono tracking-wider mb-1" style="color: var(--text-muted)">PDF 白皮书 (点击在线阅读)</div>
-              <div class="font-medium select-all mb-2.5 break-all" style="color: var(--text-main)">Cloudflare_Edge_Streaming_Architecture_and_Playback_Sandboxing_Whitepaper_v2.4_Final.pdf</div>
-              <button 
-                onclick="triggerDownload(event, 'Cloudflare_Whitepaper_v2.4.pdf', '12.8 MB')" 
-                class="w-full py-1.5 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>立即下载 PDF (12.8 MB)</span>
-              </button>
-            </div>
-
             <!-- PDF 纸张质感封面图 -->
-            <div class="relative w-full aspect-video rounded-xl bg-gradient-to-br from-blue-950/80 to-slate-900 overflow-hidden mb-2.5 border border-blue-500/30 flex items-center justify-center group-hover:border-blue-500 transition-all flex-shrink-0">
+            <div class="media-poster-box relative w-full aspect-video rounded-xl bg-gradient-to-br from-blue-950/80 to-slate-900 overflow-hidden mb-2.5 border border-blue-500/30 flex items-center justify-center group-hover:border-blue-500 transition-all flex-shrink-0">
               <div class="w-12 h-14 bg-white/10 backdrop-blur-md rounded border border-white/20 p-1.5 flex flex-col justify-between shadow-lg group-hover:scale-105 transition-transform">
                 <div class="flex items-center justify-between border-b border-white/20 pb-1">
                   <div class="w-4 h-1 bg-blue-400 rounded-full"></div>
@@ -568,19 +510,7 @@
 
           <!-- 卡片 4: Markdown 代码文档 (点击卡片直接打开代码查看器；点击右下角按钮直接下载) -->
           <div class="glass-card rounded-2xl p-3.5 cursor-pointer relative group flex flex-col justify-between" onclick="openDocViewer('Edge_Player_Deployment_and_CI_CD_Guide.md', 'markdown')">
-            
-            <div class="title-tooltip-popover">
-              <div class="text-[10px] uppercase font-mono tracking-wider mb-1" style="color: var(--text-muted)">Markdown 技术文档 (点击在线渲染)</div>
-              <div class="font-medium select-all mb-2.5 break-all" style="color: var(--text-main)">Edge_Player_Deployment_and_CI_CD_Resilience_Engineering_Guide_2026.md</div>
-              <button 
-                onclick="triggerDownload(event, 'Edge_Player_Deployment.md', '45.2 KB')" 
-                class="w-full py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>立即下载源码 (45.2 KB)</span>
-              </button>
-            </div>
-
-            <div class="relative w-full aspect-video rounded-xl bg-gradient-to-br from-emerald-950/80 to-slate-900 overflow-hidden mb-2.5 border border-emerald-500/30 flex items-center justify-center group-hover:border-emerald-500 transition-all flex-shrink-0">
+            <div class="media-poster-box relative w-full aspect-video rounded-xl bg-gradient-to-br from-emerald-950/80 to-slate-900 overflow-hidden mb-2.5 border border-emerald-500/30 flex items-center justify-center group-hover:border-emerald-500 transition-all flex-shrink-0">
               <div class="w-12 h-14 bg-emerald-500/10 backdrop-blur-md rounded border border-emerald-500/30 p-2 flex flex-col justify-between group-hover:scale-105 transition-transform">
                 <i data-lucide="code" class="w-4 h-4 text-emerald-400"></i>
                 <div class="text-[9px] font-mono text-emerald-300 font-bold">MD</div>
@@ -851,7 +781,7 @@
                 <span>Edge_Player_Deployment.md</span>
                 <span>TypeScript / Shell</span>
               </div>
-              <pre class="p-4 rounded-lg text-emerald-400 overflow-x-auto leading-relaxed bg-slate-900">
+              <pre class="p-4 rounded-lg text-emerald-400 overflow-x-auto leading-relaxed border" style="background: var(--surface-input); border-color: var(--border-subtle)">
 # 1. 初始化 Cloudflare Drive Player
 $ pnpm install
 $ wrangler pages dev public --compatibility-date=2026-10-23

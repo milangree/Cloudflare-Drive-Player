@@ -1365,7 +1365,7 @@ function renderGridView(items) {
       let mediaPosterHtml = "";
       if (thumbUrl && (item.isVideo || item.isImage)) {
         mediaPosterHtml = `
-          <div class="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 mb-2.5 border border-slate-800/80 group-hover:border-brand-500/40 transition-colors flex-shrink-0">
+          <div class="media-poster-box relative w-full aspect-video rounded-xl overflow-hidden mb-2.5 flex items-center justify-center flex-shrink-0">
             <img src="${thumbUrl}" alt="${escapeHtml(item.name)}" loading="lazy" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.classList.add('hidden');const fb=this.nextElementSibling?.classList?.contains('thumb-fallback')?this.nextElementSibling:null;if(fb){fb.classList.remove('hidden');}">
             <div class="thumb-fallback hidden absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-slate-500">
               <i data-lucide="${item.isVideo ? 'film' : 'image'}" class="w-8 h-8 mb-1 text-slate-600"></i>
@@ -1398,7 +1398,7 @@ function renderGridView(items) {
         `;
       } else if (item.isAudio) {
         mediaPosterHtml = `
-          <div class="relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
+          <div class="media-poster-box relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
             <div class="w-12 h-12 rounded-full bg-black/80 border-2 border-purple-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
               <i data-lucide="disc" class="w-6 h-6 text-purple-400 animate-spin-slow"></i>
             </div>
@@ -1411,7 +1411,7 @@ function renderGridView(items) {
       } else if (item.isDocument || /\.(pdf|md|txt|json|log|csv)$/i.test(item.name)) {
         const isPdf = /\.pdf$/i.test(item.name);
         mediaPosterHtml = `
-          <div class="relative w-full aspect-video rounded-xl ${isPdf ? 'bg-gradient-to-br from-blue-950/80 to-slate-900 border-blue-500/30 group-hover:border-blue-500' : 'bg-gradient-to-br from-emerald-950/80 to-slate-900 border-emerald-500/30 group-hover:border-emerald-500'} overflow-hidden mb-2.5 border flex items-center justify-center transition-all flex-shrink-0">
+          <div class="media-poster-box relative w-full aspect-video rounded-xl ${isPdf ? 'bg-gradient-to-br from-blue-950/80 to-slate-900 border-blue-500/30 group-hover:border-blue-500' : 'bg-gradient-to-br from-emerald-950/80 to-slate-900 border-emerald-500/30 group-hover:border-emerald-500'} overflow-hidden mb-2.5 border flex items-center justify-center transition-all flex-shrink-0">
             <div class="w-12 h-14 ${isPdf ? 'bg-blue-500/10 border-blue-500/30' : 'bg-emerald-500/10 border-emerald-500/30'} backdrop-blur-md rounded border p-2 flex flex-col justify-between group-hover:scale-105 transition-transform">
               <i data-lucide="${isPdf ? 'file-text' : 'code'}" class="w-4 h-4 ${isPdf ? 'text-blue-400' : 'text-emerald-400'}"></i>
               <div class="text-[9px] font-mono font-bold ${isPdf ? 'text-blue-300' : 'text-emerald-300'}">${ext || 'DOC'}</div>
@@ -1426,19 +1426,6 @@ function renderGridView(items) {
 
       return `
         <div class="glass-card rounded-2xl p-3.5 flex flex-col justify-between group relative transition-all duration-200 cursor-pointer" data-id="${item.id}" data-type="${item.isFolder ? "folder" : "file"}">
-          
-          <!-- 悬停气泡 (带一键下载入口) -->
-          <div class="title-tooltip-popover">
-            <div class="text-[10px] uppercase font-mono tracking-wider mb-1 text-slate-400">完整文件名</div>
-            <div class="font-medium select-all mb-2.5 break-all text-white">${escapeHtml(item.name)}</div>
-            ${!item.isFolder ? `
-              <button class="w-full py-1.5 px-2.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium flex items-center justify-center gap-1.5 text-xs transition-colors shadow-sm file-popover-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>立即下载原文件 (${formatBytes(item.size)})</span>
-              </button>
-            ` : ""}
-          </div>
-
           <div>
             ${mediaPosterHtml}
             <div class="flex items-start gap-2.5">
