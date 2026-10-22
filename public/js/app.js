@@ -279,7 +279,7 @@ function getVideoResolution(item) {
   if (item.videoMediaMetadata) {
     const { width, height } = item.videoMediaMetadata;
     if (height && width) {
-      if (height >= 2100 || width >= 3800) return "4K";
+      if (height >= 2100 || width >= 3800) return "4K UHD";
       if (height >= 1400 || width >= 2500) return "2K";
       if (height >= 1000 || width >= 1900) return "1080P";
       if (height >= 700 || width >= 1200) return "720P";
@@ -288,9 +288,11 @@ function getVideoResolution(item) {
     }
   }
 
-  const match = item.name.match(/(4k|2160p|1440p|2k|1080p|720p|480p|360p)/i);
+  const match = item.name.match(/(4k|2160p|uhd|1440p|2k|1080p|720p|480p|360p)/i);
   if (match) {
-    return match[1].toUpperCase();
+    const v = match[1].toUpperCase();
+    if (v === "4K" || v === "2160P" || v === "UHD") return "4K UHD";
+    return v;
   }
 
   return null;
@@ -1380,17 +1382,15 @@ function renderGridView(items) {
                   </div>`
                 : ""
             }
-            ${
-              resBadge
-                ? `<div class="absolute top-1.5 right-1.5 z-10 pointer-events-none">
-                    <span class="inline-flex items-center px-2 py-0.5 text-[9px] font-black tracking-widest uppercase text-white rounded-full bg-gradient-to-r from-amber-500/90 to-orange-600/95 backdrop-blur-md border border-white/25 shadow-[0_2px_8px_rgba(249,115,22,0.45)] transition-transform duration-200 group-hover:scale-105">${resBadge}</span>
-                  </div>`
-                : ""
-            }
-            <div class="absolute bottom-1.5 right-1.5 z-10 pointer-events-none">
+            <div class="absolute top-2 left-2 flex items-center gap-1.5 z-10 pointer-events-none">
               ${
                 ext
-                  ? `<span class="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold tracking-wider uppercase text-slate-200 rounded-md bg-black/65 backdrop-blur-md border border-white/15 shadow-[0_2px_6px_rgba(0,0,0,0.5)]">${ext}</span>`
+                  ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-600 text-white shadow-sm">${ext}</span>`
+                  : ""
+              }
+              ${
+                resBadge
+                  ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-brand-500 text-white shadow-sm">${resBadge}</span>`
                   : ""
               }
             </div>
@@ -1399,11 +1399,12 @@ function renderGridView(items) {
       } else if (item.isAudio) {
         mediaPosterHtml = `
           <div class="media-poster-box relative w-full aspect-video rounded-xl bg-gradient-to-br from-purple-950/80 to-slate-950 overflow-hidden mb-2.5 border border-purple-500/30 flex items-center justify-center group-hover:border-purple-500 transition-all flex-shrink-0">
-            <div class="w-12 h-12 rounded-full bg-black/80 border-2 border-purple-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-              <i data-lucide="disc" class="w-6 h-6 text-purple-400 animate-spin-slow"></i>
+            <div class="w-14 h-14 rounded-full bg-black/80 border-2 border-purple-400 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+              <i data-lucide="disc" class="w-7 h-7 text-purple-400 animate-spin-slow"></i>
             </div>
             <div class="absolute top-2 left-2 flex items-center gap-1.5">
-              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-600 text-white shadow-sm">${ext || 'AUDIO'}</span>
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-600 text-white shadow-sm">${ext || 'FLAC'}</span>
+              <span class="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-600 text-white shadow-sm">Hi-Res</span>
             </div>
             <span class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-purple-300">无损音乐</span>
           </div>

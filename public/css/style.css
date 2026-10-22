@@ -180,6 +180,10 @@ body {
   color: var(--text-muted) !important;
 }
 
+[data-theme="light"] #site-title {
+  color: var(--text-main) !important;
+}
+
 [data-theme="light"] header.glass-panel button,
 [data-theme="light"] .modal-window-card button:not(.bg-brand-500):not(.bg-purple-600):not(.bg-blue-600):not(.bg-rose-600) {
   background-color: var(--surface-input) !important;
@@ -190,6 +194,21 @@ body {
 [data-theme="light"] header.glass-panel button:hover {
   background-color: var(--surface-card-hover) !important;
   border-color: var(--border-strong) !important;
+}
+
+[data-theme="light"] #player-dialog {
+  background-color: var(--surface-modal) !important;
+  border-color: var(--border-strong) !important;
+}
+
+[data-theme="light"] #player-header {
+  background-color: var(--surface-modal-header) !important;
+  border-bottom-color: var(--border-subtle) !important;
+  color: var(--text-main) !important;
+}
+
+[data-theme="light"] #player-file-name {
+  color: var(--text-main) !important;
 }
 
 [data-theme="light"] #list-view {
@@ -222,9 +241,17 @@ body {
   border-color: var(--border-subtle) !important;
 }
 
+[data-theme="light"] #doc-viewer-title {
+  color: var(--text-main) !important;
+}
+
 [data-theme="light"] #audio-playlist-drawer {
   background-color: var(--surface-modal) !important;
   border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] #audio-track-title {
+  color: var(--text-main) !important;
 }
 
 [data-theme="light"] .text-slate-200,
@@ -236,6 +263,16 @@ body {
 [data-theme="light"] .text-slate-400,
 [data-theme="light"] .text-slate-500 {
   color: var(--text-muted) !important;
+}
+
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-700 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-slate-950 {
+  background-color: var(--surface-input) !important;
 }
 
 /* 列表行悬停平滑过渡 */
