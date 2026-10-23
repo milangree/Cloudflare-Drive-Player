@@ -234,18 +234,18 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
-// 辅助工具：日期格式化
+// 辅助工具：日期格式化 (紧凑标准年月日与时间，杜绝超长字符串挤压)
 function formatDate(dateStr) {
   if (!dateStr) return "-";
   try {
     const d = new Date(dateStr);
-    return d.toLocaleString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    if (isNaN(d.getTime())) return dateStr;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${y}-${m}-${day} ${hh}:${mm}`;
   } catch (_) {
     return dateStr;
   }
@@ -1444,36 +1444,47 @@ function renderGridView(items) {
             </div>
           </div>
 
-          <div class="mt-auto pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs font-mono text-[var(--text-muted)]">
-            <div class="flex items-center gap-1.5 truncate pr-2">
-              <span class="text-brand-500 font-semibold">${item.isFolder ? `${item.itemCount || 0} 项` : formatBytes(item.size)}</span>
-              <span>·</span>
-              <span class="truncate">${formatDate(item.modifiedTime)}</span>
+          <div class="mt-auto pt-2 border-t border-slate-800/60 flex flex-col gap-1.5 font-mono select-none">
+            <!-- 顶行：容量大小与修改时间 (两端对齐，空间独立，时间绝不受按钮挤压) -->
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-brand-500 font-semibold flex-shrink-0">
+                ${item.isFolder ? formatBytes(item.size || 0) : formatBytes(item.size)}
+              </span>
+              <span class="text-slate-400 text-[10px] sm:text-[11px] whitespace-nowrap">
+                ${formatDate(item.modifiedTime)}
+              </span>
             </div>
-            <div class="flex items-center gap-1 flex-shrink-0">
-              ${
-                !item.isFolder
-                  ? `<button class="p-1.5 -mr-1 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载原文件">
-                      <i data-lucide="download" class="w-4 h-4"></i>
-                    </button>
-                    <button class="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
-                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : `<button class="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-xs flex items-center gap-1 folder-enter-trigger" data-id="${item.id}" title="进入文件夹">
-                      <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
-                      <span>打开</span>
-                    </button>`
-              }
-              ${
-                state.isAdmin
-                  ? `<button class="p-1.5 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="重命名">
-                      <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button class="p-1.5 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="删除">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>`
-                  : ""
-              }
+
+            <!-- 底行：分类标识/文件数 与 操作按钮组 (下载/直链/重命名/删除) -->
+            <div class="flex items-center justify-between pt-1 border-t border-slate-800/30 text-xs">
+              <div class="text-[10px] text-slate-500 truncate pr-1">
+                ${item.isFolder ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">${item.itemCount || 0} 项</span>` : `<span class="uppercase tracking-wider">${item.name.includes('.') ? item.name.split('.').pop() : 'FILE'}</span>`}
+              </div>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                ${
+                  !item.isFolder
+                    ? `<button class="p-1 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors file-quick-download-btn" data-id="${item.id}" data-name="${escapeHtml(item.name)}" title="下载原文件">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button class="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 copy-link-btn" data-url="${window.location.origin}${streamUrl}" title="复制直链">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                      </button>`
+                    : `<button class="px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded text-[11px] flex items-center gap-1 folder-enter-trigger" data-id="${item.id}" title="进入文件夹">
+                        <i data-lucide="folder-open" class="w-3 h-3"></i>
+                        <span>打开</span>
+                      </button>`
+                }
+                ${
+                  state.isAdmin
+                    ? `<button class="p-1 hover:text-amber-400 rounded hover:bg-slate-800 admin-rename-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="重命名">
+                        <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button class="p-1 hover:text-rose-400 rounded hover:bg-slate-800 admin-delete-btn" data-id="${item.id}" data-shortcut-id="${item.shortcutId || ""}" data-name="${escapeHtml(item.name)}" title="删除">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>`
+                    : ""
+                }
+              </div>
             </div>
           </div>
         </div>
@@ -2268,10 +2279,11 @@ function formatDuration(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
+  const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
   if (h > 0) {
-    return `${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+    return `${h}:${pad(m)}:${pad(s)}`;
   }
-  return `${m < 10 ? "0" : ""}${s}`;
+  return `${pad(m)}:${pad(s)}`;
 }
 
 let resumeBannerTimer = null;
