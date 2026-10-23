@@ -1,107 +1,124 @@
-# Cloudflare Drive Player - API 接口参考文档 (API Reference)
+<div align="center">
 
-本文档提供系统全量 API 规范说明与可直接执行的请求示例。所有接口均部署在 Cloudflare Pages Functions 边缘运行时（基于 V8 Isolate）。
+# Cloudflare Drive Player - API Reference
 
----
+<p align="center">
+  <a href="https://pages.cloudflare.com/"><img src="https://img.shields.io/badge/Runtime-Cloudflare%20Pages%20Functions-f38020?style=flat&logo=cloudflare" alt="Cloudflare Pages Functions"></a>
+  <img src="https://img.shields.io/badge/Auth-Web%20Crypto%20RS256-blue?style=flat" alt="Web Crypto RS256">
+  <img src="https://img.shields.io/badge/Format-RESTful%20JSON-emerald?style=flat" alt="RESTful JSON">
+</p>
 
-## 目录
-- [认证与安全机制](#认证与安全机制)
-- [前台公开接口](#前台公开接口)
-  - [1. 站点信息与配置状态 (`GET /api/info`)](#1-站点信息与配置状态-get-apiinfo)
-  - [2. 目录文件索引与搜索 (`GET /api/list`)](#2-目录文件索引与搜索-get-apilist)
-  - [3. 媒体流式代理与分片播放 (`GET/HEAD/OPTIONS /api/stream/:id`)](#3-媒体流式代理与分片播放-getheadoptions-apistreamid)
-  - [4. 文件原生下载 (`GET /api/download/:id`)](#4-文件原生下载-get-apidownloadid)
-- [前台密码验证与后台管理接口](#前台密码验证与后台管理接口)
-  - [5. 身份认证与 Token 颁发 (`POST /api/admin/auth`)](#5-身份认证与-token-颁发-post-apiadminauth)
-  - [6. 系统配置读取与更新 (`GET/POST /api/admin/config`)](#6-系统配置读取与更新-getpost-apiadminconfig)
-  - [7. 云盘文件在线管理 (`POST /api/admin/files`)](#7-云盘文件在线管理-post-apiadminfiles)
+<p align="center">
+  <b>English</b> · <a href="api-reference_zh.md">简体中文</a>
+</p>
+
+</div>
 
 ---
 
-## 认证与安全机制
+This document provides complete API endpoint specifications and reproducible request examples for Cloudflare Drive Player. All endpoints execute within the Cloudflare Pages Functions edge runtime (V8 Isolates).
 
-1. **公开访问模式**：若未在后台启用「访问密码」，`/api/info`、`/api/list`、`/api/stream/:id`、`/api/download/:id` 均无需额外鉴权。
-2. **密码保护模式**：若启用了访问密码，客户端需先通过 `/api/admin/auth`（action: `verify_access`）置换 Access Token，并在后续请求头中携带：
+---
+
+## 📑 Table of Contents
+
+- [Authentication & Security Model](#authentication--security-model)
+- [Public Endpoints](#public-endpoints)
+  - [1. Site Information & Status (`GET /api/info`)](#1-site-information--status-get-apiinfo)
+  - [2. Directory Indexing & Search (`GET /api/list`)](#2-directory-indexing--search-get-apilist)
+  - [3. Media Streaming & Range Proxy (`GET/HEAD/OPTIONS /api/stream/:id`)](#3-media-streaming--range-proxy-getheadoptions-apistreamid)
+  - [4. Original File Download (`GET /api/download/:id`)](#4-original-file-download-get-apidownloadid)
+- [Protected & Administration Endpoints](#protected--administration-endpoints)
+  - [5. Authentication & Token Issuance (`POST /api/admin/auth`)](#5-authentication--token-issuance-post-apiadminauth)
+  - [6. System Configuration (`GET/POST /api/admin/config`)](#6-system-configuration-getpost-apiadminconfig)
+  - [7. File Lifecycle Operations (`POST /api/admin/files`)](#7-file-lifecycle-operations-post-apiadminfiles)
+
+---
+
+## Authentication & Security Model
+
+1. **Public Access Mode**: When site password protection is disabled, `/api/info`, `/api/list`, `/api/stream/:id`, and `/api/download/:id` require no authentication headers.
+2. **Password Protected Mode**: When enabled, clients must first call `/api/admin/auth` with `action: "verify_access"` to obtain an Access Token. Subsequent requests must supply this token via:
    ```http
    Authorization: Bearer <TOKEN>
    ```
-   或通过 Query 参数传递：`?token=<TOKEN>`。
-3. **管理员接口鉴权**：`/api/admin/config` 与 `/api/admin/files` 严格要求管理员 Bearer Token（由 action: `admin_login` 颁发）。
-4. **CORS 支持**：`/functions/api/_middleware.js` 统一处理 `/api/*` 下的所有跨域请求与预检（`OPTIONS` 返回 HTTP 204），静态资源（`/`、`/css/*`、`/js/*`）由边缘 CDN 零开销直通。
+   Or via the query parameter: `?token=<TOKEN>`.
+3. **Admin Endpoints**: `/api/admin/config` and `/api/admin/files` strictly require an administrator Bearer Token (obtained via `action: "admin_login"`).
+4. **CORS Handling**: `/functions/api/_middleware.js` uniformly manages cross-origin headers and handles pre-flight checks (`OPTIONS` returning HTTP 204). Static assets (`/`, `/css/*`, `/js/*`) are served directly via Cloudflare Anycast CDN caches without invoking Functions.
 
 ---
 
-## 前台公开接口
+## Public Endpoints
 
-### 1. 站点信息与配置状态 (`GET /api/info`)
+### 1. Site Information & Status (`GET /api/info`)
 
-探测云盘挂载状态、展示站点名称与是否需要访客密码。
+Inspects mount status, site brand title, root folder identity, and whether visitor password protection is required.
 
-- **请求方法**：`GET`
-- **请求路径**：`/api/info`
-- **请求示例**：
+- **Method**: `GET`
+- **Path**: `/api/info`
+- **Example Request**:
   ```bash
   curl -X GET https://cf-pages-drive-player.pages.dev/api/info
   ```
-- **成功响应 (HTTP 200)**：
+- **Success Response (HTTP 200)**:
   ```json
   {
     "success": true,
     "configured": true,
-    "siteName": "我的影视库 - Drive Player",
+    "siteName": "My Media Vault - Drive Player",
     "rootFolderId": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l",
-    "rootName": "我的影视库",
+    "rootName": "Media Collection",
     "clientEmail": "dri***@my-project.iam.gserviceaccount.com",
     "requirePassword": false
   }
   ```
-- **凭据未配置响应 (HTTP 200)**：
+- **Unconfigured Response (HTTP 200)**:
   ```json
   {
     "success": false,
     "configured": false,
-    "error": "未检测到 SERVICE_ACCOUNT_JSON 环境变量"
+    "error": "Missing SERVICE_ACCOUNT_JSON or credentials environment variables"
   }
   ```
 
 ---
 
-### 2. 目录文件索引与搜索 (`GET /api/list`)
+### 2. Directory Indexing & Search (`GET /api/list`)
 
-获取指定目录的文件及子文件夹列表，支持无限层级穿梭、全局关键字搜索与 Google 快捷方式自动穿透。
+Lists files and subfolders within a given directory, supporting infinite hierarchy traversal, global keyword search, and automatic Google Drive shortcut resolution.
 
-- **请求方法**：`GET`
-- **请求路径**：`/api/list`
-- **查询参数**：
-  | 参数名 | 类型 | 必填 | 默认值 | 说明 |
+- **Method**: `GET`
+- **Path**: `/api/list`
+- **Query Parameters**:
+  | Parameter | Type | Required | Default | Description |
   | :--- | :--- | :---: | :--- | :--- |
-  | `folderId` | string | 否 | `root` | 目录 ID；缺省时使用根目录 `ROOT_FOLDER_ID` |
-  | `search` | string | 否 | 空 | 模糊搜索文件名关键字（带搜索时跨越层级） |
-  | `pageToken` | string | 否 | 空 | Google Drive 分页标记 |
-- **请求示例**：
+  | `folderId` | string | No | `root` | Directory ID; defaults to `ROOT_FOLDER_ID` if omitted |
+  | `search` | string | No | *empty* | Keyword search across filenames (spans recursive hierarchy) |
+  | `pageToken` | string | No | *empty* | Google Drive pagination token |
+- **Example Requests**:
   ```bash
-  # 查询根目录
+  # Query root folder
   curl -X GET "https://cf-pages-drive-player.pages.dev/api/list"
 
-  # 查询特定子目录
+  # Query specific subfolder
   curl -X GET "https://cf-pages-drive-player.pages.dev/api/list?folderId=1A2B3C4D5E"
 
-  # 关键字搜索
+  # Search keyword
   curl -X GET "https://cf-pages-drive-player.pages.dev/api/list?search=Avatar"
   ```
-- **成功响应 (HTTP 200)**：
+- **Success Response (HTTP 200)**:
   ```json
   {
     "success": true,
     "currentFolder": {
       "id": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l",
-      "name": "电影专区"
+      "name": "Movies"
     },
     "items": [
       {
         "id": "1XYZ888FolderId",
         "shortcutId": null,
-        "name": "科幻大片",
+        "name": "Sci-Fi",
         "mimeType": "application/vnd.google-apps.folder",
         "size": 15482390142,
         "itemCount": 12,
@@ -141,32 +158,33 @@
 
 ---
 
-### 3. 媒体流式代理与分片播放 (`GET/HEAD/OPTIONS /api/stream/:id`)
+### 3. Media Streaming & Range Proxy (`GET/HEAD/OPTIONS /api/stream/:id`)
 
-高性能媒体流代理接口，具备 HTTP 206 Partial Content 透传与 Content-Type 精准校准，支持浏览器与第三方播放器拖拽进度条。
+High-performance streaming proxy featuring HTTP 206 Partial Content byte-range passthrough, strict MIME type mapping, and seamless seeking support for web and external media players.
 
-- **请求方法**：`GET`, `HEAD`, `OPTIONS`
-- **请求路径**：`/api/stream/:id`
-- **路径参数**：
-  | 参数名 | 类型 | 必填 | 说明 |
+- **Methods**: `GET`, `HEAD`, `OPTIONS`
+- **Path**: `/api/stream/:id`
+- **Path Parameters**:
+  | Parameter | Type | Required | Description |
   | :--- | :--- | :---: | :--- |
-  | `id` | string | 是 | Google Drive 文件唯一 ID |
-- **查询参数**：
-  | 参数名 | 类型 | 必填 | 说明 |
+  | `id` | string | Yes | Unique Google Drive file ID |
+- **Query Parameters**:
+  | Parameter | Type | Required | Description |
   | :--- | :--- | :---: | :--- |
-  | `filename` | string | 否 | 用于 MIME 映射校准（如 `.mkv` 强制转 `video/x-matroska`）及生成 `Content-Disposition` 供本地播放器识别 |
-- **请求头示例 (Range 分片请求)**：
+  | `filename` | string | No | Helps correct MIME headers (e.g., mapping `.mkv` to `video/x-matroska`) and formats `Content-Disposition` |
+  | `token` | string | No | Access token when password protection is active |
+- **Sample Request (Byte-Range)**:
   ```http
   GET /api/stream/1ABC999VideoId?filename=Inception.mkv HTTP/1.1
   Host: cf-pages-drive-player.pages.dev
   Range: bytes=0-1048575
   ```
-- **请求命令示例**：
+- **Example Command**:
   ```bash
-  # 测试获取前 1MB 分片
+  # Request initial 1MB byte chunk
   curl -i -H "Range: bytes=0-1048575" "https://cf-pages-drive-player.pages.dev/api/stream/1ABC999VideoId?filename=Inception.mkv"
   ```
-- **分片成功响应 (HTTP 206 Partial Content)**：
+- **Partial Content Response (HTTP 206)**:
   ```http
   HTTP/1.1 206 Partial Content
   Content-Type: video/x-matroska
@@ -179,32 +197,37 @@
   Cache-Control: public, max-age=14400, stale-while-revalidate=86400
   ```
 
-#### 附：客户端智能降级与 Google 云端预览集成契约
+#### Client Failover Contract: Google Cloud Preview
 
-当浏览器宿主环境无法原生解码媒体流时（如 Safari 下播放 MKV、缺少 HEVC/H.265 硬解、商用 DTS/AC-3 音频或起播黑屏），前端状态机自动无感降级调用 Google 官方转码预览通道：
-- **预览端点**：`https://drive.google.com/file/d/{id}/preview`
-- **控制参数**：
-  - `autoplay=1`：自动起播
-  - `vq=highres`（或 `hd2160`/`hd1080`/`hd720`）：画质参数对齐源文件元数据
-- **安全沙箱隔离**：嵌入时使用 W3C HTML5 iframe 沙箱属性：`sandbox="allow-scripts allow-forms allow-presentation"`，严禁声明 `allow-popups`，天然阻断弹窗并彻底废除物理遮挡层。详细规范见 [ADR-0002](adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md)。
+When native playback fails due to missing codecs (e.g., Safari with MKV, lack of HEVC/H.265 hardware support, proprietary DTS/AC-3 audio, or black screen watchdog triggers), client state machines fall back automatically to Google Cloud transcoding preview:
+- **Preview Endpoint**: `https://drive.google.com/file/d/{id}/preview`
+- **Query Parameters**:
+  - `autoplay=1`: Initiates immediate playback.
+  - `vq=highres` (or `hd2160`/`hd1080`/`hd720`): Matches resolution with source metadata.
+- **Viewport Integration**: Uses negative CSS margin clipping to hide Google's header pop-out icon without overlay masks, preserving 100% native hardware decoding, DRM, and full-screen support. See [ADR-0002](adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md) for architectural details.
 
 ---
 
-### 4. 文件原生下载 (`GET /api/download/:id`)
+### 4. Original File Download (`GET /api/download/:id`)
 
-触发浏览器原生文件下载对话框，自动处理 RFC 5987 国际化文件名编码与 Google 文档（Docs/Sheets/Slides）转码导出。
+Triggers browser native file download dialogues with strict RFC 5987 internationalized filename encoding and on-the-fly Google Workspace document conversion.
 
-- **请求方法**：`GET`
-- **请求路径**：`/api/download/:id`
-- **查询参数**：
-  | 参数名 | 类型 | 必填 | 说明 |
+- **Method**: `GET`
+- **Path**: `/api/download/:id`
+- **Path Parameters**:
+  | Parameter | Type | Required | Description |
   | :--- | :--- | :---: | :--- |
-  | `filename` | string | 否 | 自定义保存的文件名 |
-- **请求命令示例**：
+  | `id` | string | Yes | Google Drive file ID |
+- **Query Parameters**:
+  | Parameter | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `filename` | string | No | Custom downloaded filename |
+  | `token` | string | No | Access token (when password protection is enabled) |
+- **Example Request**:
   ```bash
   curl -OJ "https://cf-pages-drive-player.pages.dev/api/download/1ABC999VideoId?filename=Inception.mkv"
   ```
-- **成功响应 (HTTP 200)**：
+- **Success Response (HTTP 200)**:
   ```http
   HTTP/1.1 200 OK
   Content-Type: application/octet-stream
@@ -213,21 +236,21 @@
 
 ---
 
-## 前台密码验证与后台管理接口
+## Protected & Administration Endpoints
 
-### 5. 身份认证与 Token 颁发 (`POST /api/admin/auth`)
+### 5. Authentication & Token Issuance (`POST /api/admin/auth`)
 
-- **请求方法**：`POST`
-- **请求路径**：`/api/admin/auth`
-- **请求头**：`Content-Type: application/json`
+- **Method**: `POST`
+- **Path**: `/api/admin/auth`
+- **Headers**: `Content-Type: application/json`
 
-#### 场景 A：访客前台访问密码校验 (`verify_access`)
+#### Scenario A: Visitor Password Verification (`verify_access`)
 ```bash
 curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/auth \
   -H "Content-Type: application/json" \
   -d '{"action": "verify_access", "password": "guest_password_123"}'
 ```
-响应示例：
+Response:
 ```json
 {
   "success": true,
@@ -235,13 +258,13 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/auth \
 }
 ```
 
-#### 场景 B：管理员控制台登录 (`admin_login`)
+#### Scenario B: Administrator Login (`admin_login`)
 ```bash
 curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/auth \
   -H "Content-Type: application/json" \
   -d '{"action": "admin_login", "password": "your_admin_password"}'
 ```
-响应示例：
+Response:
 ```json
 {
   "success": true,
@@ -251,23 +274,24 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/auth \
 
 ---
 
-### 6. 系统配置读取与更新 (`GET/POST /api/admin/config`)
+### 6. System Configuration (`GET/POST /api/admin/config`)
 
-读取或更新系统级配置（网站标题、访问密码、管理员密码）。
+Reads or updates system-level runtime configurations (site title, subtitle, visitor protection, and admin passwords).
 
-- **请求头**：`Authorization: Bearer <ADMIN_TOKEN>`
+- **Header**: `Authorization: Bearer <ADMIN_TOKEN>`
 
-#### 读取当前配置 (`GET`)
+#### Read Current Configuration (`GET`)
 ```bash
 curl -X GET https://cf-pages-drive-player.pages.dev/api/admin/config \
   -H "Authorization: Bearer <ADMIN_TOKEN>"
 ```
-响应示例：
+Response:
 ```json
 {
   "success": true,
   "config": {
-    "siteName": "我的私人影院",
+    "siteName": "My Media Vault",
+    "siteSubtitle": "Streaming and File Hub",
     "requirePassword": true,
     "accessPassword": "guest_password_123",
     "hasAdminPassword": true,
@@ -276,19 +300,20 @@ curl -X GET https://cf-pages-drive-player.pages.dev/api/admin/config \
 }
 ```
 
-#### 更新系统配置 (`POST`)
+#### Update System Configuration (`POST`)
 ```bash
 curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/config \
   -H "Authorization: Bearer <ADMIN_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "siteName": "全新影音中心",
+    "siteName": "Enhanced Media Studio",
+    "siteSubtitle": "Edge Powered Cloud Drive",
     "requirePassword": true,
     "accessPassword": "new_guest_pwd_2026",
     "newAdminPassword": "new_admin_pwd_2026"
   }'
 ```
-响应示例：
+Response:
 ```json
 {
   "success": true,
@@ -299,25 +324,26 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/config \
 
 ---
 
-### 7. 云盘文件在线管理 (`POST /api/admin/files`)
+### 7. File Lifecycle Operations (`POST /api/admin/files`)
 
-提供云端文件全生命周期管控接口。
+Provides complete cloud drive file management capabilities.
 
-- **请求头**：`Authorization: Bearer <ADMIN_TOKEN>`
-- **请求头**：`Content-Type: application/json`
+- **Headers**:
+  - `Authorization: Bearer <ADMIN_TOKEN>`
+  - `Content-Type: application/json`
 
-#### 支持动作速查表：
-| Action | 说明 | 关键入参 |
+#### Action Reference Table:
+| Action | Description | Key Parameters |
 | :--- | :--- | :--- |
-| `inspect` | 深度探测文件/目录元数据与子项 | `fileId` (默认 root) |
-| `rename` | 重命名文件、目录或快捷方式 | `fileId`, `shortcutId` (可选), `newName` |
-| `move` | 移动文件或目录至目标文件夹 | `fileId` 或 `shortcutId`, `targetFolderId` |
-| `delete` | 移入回收站或彻底删除 | `fileId` 或 `shortcutId`, `permanent: boolean` |
-| `create_folder` | 在指定父目录下新建文件夹 | `name`, `parentFolderId` (默认 root) |
-| `create_file` | 创建文本/代码文件 (支持 multipart) | `name`, `content`, `mimeType`, `parentFolderId` |
-| `init_resumable_upload` | 申请 Google 断点续传直传 URL | `name`, `parentFolderId`, `mimeType`, `fileSize` |
+| `inspect` | In-depth metadata discovery for files/folders | `fileId` (defaults to root) |
+| `rename` | Renames a file, folder, or shortcut | `fileId`, `shortcutId` (optional), `newName` |
+| `move` | Moves a file or folder to a target destination | `fileId` or `shortcutId`, `targetFolderId` |
+| `delete` | Soft-deletes to Trash or deletes permanently | `fileId` or `shortcutId`, `permanent: boolean` |
+| `create_folder` | Creates a new subfolder | `name`, `parentFolderId` (defaults to root) |
+| `create_file` | Creates a text or code document | `name`, `content`, `mimeType`, `parentFolderId` |
+| `init_resumable_upload` | Requests a Google direct upload session URL | `name`, `parentFolderId`, `mimeType`, `fileSize` |
 
-#### 示例：重命名文件 (`rename`)
+#### Example: Rename File (`rename`)
 ```bash
 curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/files \
   -H "Authorization: Bearer <ADMIN_TOKEN>" \
@@ -328,11 +354,11 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/files \
     "newName": "Inception.DirectorCut.2010.mkv"
   }'
 ```
-响应示例：
+Response:
 ```json
 {
   "success": true,
-  "message": "重命名成功",
+  "message": "File renamed successfully",
   "file": {
     "id": "1ABC999VideoId",
     "name": "Inception.DirectorCut.2010.mkv"

@@ -27,6 +27,9 @@ export async function onRequest(context) {
           accessPassword: config.accessPassword,
           hasAdminPassword: Boolean(config.adminPassword),
           kvConfigured: Boolean(env.DRIVE_KV),
+          tgBotToken: config.tgBotToken || "",
+          tgAllowedUsers: config.tgAllowedUsers || "",
+          tgUploadFolderId: config.tgUploadFolderId || "",
         },
       }),
       { headers: { "Content-Type": "application/json" } }
@@ -37,7 +40,16 @@ export async function onRequest(context) {
   if (request.method === "POST") {
     try {
       const body = await request.json();
-      const { siteName, siteSubtitle, requirePassword, accessPassword, newAdminPassword } = body;
+      const {
+        siteName,
+        siteSubtitle,
+        requirePassword,
+        accessPassword,
+        newAdminPassword,
+        tgBotToken,
+        tgAllowedUsers,
+        tgUploadFolderId,
+      } = body;
 
       const updateData = {};
       if (typeof siteName === "string") updateData.siteName = siteName.trim();
@@ -47,6 +59,9 @@ export async function onRequest(context) {
       if (typeof newAdminPassword === "string" && newAdminPassword.trim()) {
         updateData.adminPassword = newAdminPassword.trim();
       }
+      if (typeof tgBotToken === "string") updateData.tgBotToken = tgBotToken.trim();
+      if (typeof tgAllowedUsers === "string") updateData.tgAllowedUsers = tgAllowedUsers.trim();
+      if (typeof tgUploadFolderId === "string") updateData.tgUploadFolderId = tgUploadFolderId.trim();
 
       const res = await saveSystemConfig(env, updateData);
 

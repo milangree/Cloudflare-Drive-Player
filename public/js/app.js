@@ -80,6 +80,12 @@ const dom = {
   cfgAccessPasswordContainer: document.getElementById("cfg-access-password-container"),
   cfgAccessPassword: document.getElementById("cfg-access-password"),
   cfgNewAdminPassword: document.getElementById("cfg-new-admin-password"),
+  cfgTgBotToken: document.getElementById("cfg-tg-bot-token"),
+  cfgTgUploadFolder: document.getElementById("cfg-tg-upload-folder"),
+  cfgTgAllowedUsers: document.getElementById("cfg-tg-allowed-users"),
+  tgStatusBadge: document.getElementById("tg-status-badge"),
+  tgWebhookInfoText: document.getElementById("tg-webhook-info-text"),
+  btnRegisterTgWebhook: document.getElementById("btn-register-tg-webhook"),
   adminLogoutBtn: document.getElementById("admin-logout-btn"),
   // 单个文件操作模态框 (保留用于单项重命名/移动)
   fileActionModal: document.getElementById("file-action-modal"),
@@ -698,6 +704,26 @@ async function loadAdminDashboard() {
       dom.cfgRequirePassword.checked = Boolean(data.config.requirePassword);
       dom.cfgAccessPassword.value = data.config.accessPassword || "";
       dom.cfgNewAdminPassword.value = "";
+      if (dom.cfgTgBotToken) dom.cfgTgBotToken.value = data.config.tgBotToken || "";
+      if (dom.cfgTgUploadFolder) dom.cfgTgUploadFolder.value = data.config.tgUploadFolderId || "";
+      if (dom.cfgTgAllowedUsers) dom.cfgTgAllowedUsers.value = data.config.tgAllowedUsers || "";
+
+      // 更新 Telegram 状态徽章与提示
+      if (dom.tgStatusBadge) {
+        if (data.config.tgBotToken) {
+          dom.tgStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/20 text-sky-400 border border-sky-500/30";
+          dom.tgStatusBadge.textContent = "BOT: CONFIGURED";
+          if (dom.tgWebhookInfoText) {
+            dom.tgWebhookInfoText.textContent = "Token 已保存，点击右侧可向 Telegram 注册 Webhook";
+          }
+        } else {
+          dom.tgStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400";
+          dom.tgStatusBadge.textContent = "未启用";
+          if (dom.tgWebhookInfoText) {
+            dom.tgWebhookInfoText.textContent = "请先填入 Telegram Bot Token 并保存系统配置";
+          }
+        }
+      }
 
       // 更新存储模式状态条 (Cloudflare KV vs Google Drive Metadata)
       if (dom.kvStatusIndicator && dom.kvStatusDot && dom.kvStatusText && dom.kvStatusBadge) {
@@ -3590,6 +3616,9 @@ function setupEventListeners() {
       const requirePassword = dom.cfgRequirePassword.checked;
       const accessPassword = dom.cfgAccessPassword.value.trim();
       const newAdminPassword = dom.cfgNewAdminPassword.value.trim();
+      const tgBotToken = dom.cfgTgBotToken ? dom.cfgTgBotToken.value.trim() : "";
+      const tgUploadFolderId = dom.cfgTgUploadFolder ? dom.cfgTgUploadFolder.value.trim() : "";
+      const tgAllowedUsers = dom.cfgTgAllowedUsers ? dom.cfgTgAllowedUsers.value.trim() : "";
 
       if (requirePassword && !accessPassword) {
         showToast("开启密码保护时，访客密码不能为空！");
@@ -3609,6 +3638,9 @@ function setupEventListeners() {
             requirePassword,
             accessPassword,
             newAdminPassword,
+            tgBotToken,
+            tgUploadFolderId,
+            tgAllowedUsers,
           }),
         });
 
@@ -3657,6 +3689,49 @@ function setupEventListeners() {
     dom.cfgRequirePassword.addEventListener("change", (e) => {
       if (dom.cfgAccessPasswordContainer) {
         dom.cfgAccessPasswordContainer.classList.toggle("opacity-40", !e.target.checked);
+      }
+    });
+  }
+
+  // Telegram Webhook 一键快速注册与绑定
+  if (dom.btnRegisterTgWebhook) {
+    dom.btnRegisterTgWebhook.addEventListener("click", async () => {
+      const currentToken = dom.cfgTgBotToken ? dom.cfgTgBotToken.value.trim() : "";
+      if (!currentToken) {
+        showToast("请先填入 Telegram Bot Token 并点击保存系统配置！");
+        return;
+      }
+
+      dom.btnRegisterTgWebhook.disabled = true;
+      dom.btnRegisterTgWebhook.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>正在绑定...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+
+      try {
+        const res = await fetch("/api/admin/telegram", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${state.adminToken}`,
+          },
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("🎉 Telegram Webhook 绑定成功！");
+          if (dom.tgWebhookInfoText) {
+            dom.tgWebhookInfoText.textContent = `✅ Webhook 已成功接入: ${data.webhookUrl}`;
+          }
+          if (dom.tgStatusBadge) {
+            dom.tgStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+            dom.tgStatusBadge.textContent = "WEBHOOK: ACTIVE";
+          }
+        } else {
+          showToast("绑定失败: " + (data.error || "未知异常"));
+        }
+      } catch (err) {
+        showToast("网络请求异常: " + err.message);
+      } finally {
+        dom.btnRegisterTgWebhook.disabled = false;
+        dom.btnRegisterTgWebhook.innerHTML = `<i data-lucide="zap" class="w-3 h-3"></i><span>一键绑定 Webhook</span>`;
+        if (window.lucide) window.lucide.createIcons();
       }
     });
   }

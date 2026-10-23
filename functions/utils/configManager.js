@@ -14,9 +14,13 @@ import { getAccessToken, getCredentials } from "./googleAuth.js";
 
 const memoryConfig = {
   siteName: "",
+  siteSubtitle: "",
   accessPassword: "",
   adminPassword: "",
   requirePassword: null,
+  tgBotToken: "",
+  tgAllowedUsers: "",
+  tgUploadFolderId: "",
 };
 
 let cachedDriveConfig = null;
@@ -64,9 +68,13 @@ async function writeConfigToDrive(env, config) {
 
     const payload = {
       siteName: config.siteName || "",
+      siteSubtitle: config.siteSubtitle || "",
       requirePassword: Boolean(config.requirePassword),
       accessPassword: config.accessPassword || "",
       adminPassword: config.adminPassword || "",
+      tgBotToken: config.tgBotToken || "",
+      tgAllowedUsers: config.tgAllowedUsers || "",
+      tgUploadFolderId: config.tgUploadFolderId || "",
     };
 
     const patchUrl = `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=id,properties`;
@@ -102,9 +110,13 @@ export async function getSystemConfig(env) {
   const envRequirePassword = env.REQUIRE_ACCESS_PASSWORD === "true" || env.REQUIRE_ACCESS_PASSWORD === "1";
   let config = {
     siteName: (env.SITE_NAME || "").trim(),
+    siteSubtitle: (env.SITE_SUBTITLE || "").trim(),
     accessPassword: (env.ACCESS_PASSWORD || "").trim(),
     adminPassword: (env.ADMIN_PASSWORD || "admin").trim(),
     requirePassword: envRequirePassword,
+    tgBotToken: (env.TELEGRAM_BOT_TOKEN || env.TG_BOT_TOKEN || "").trim(),
+    tgAllowedUsers: (env.TELEGRAM_ALLOWED_USERS || env.TG_ALLOWED_USERS || "").trim(),
+    tgUploadFolderId: (env.TELEGRAM_UPLOAD_FOLDER_ID || env.TG_UPLOAD_FOLDER_ID || "").trim(),
   };
 
   // 1. 尝试从 Cloudflare KV 读取
@@ -113,9 +125,13 @@ export async function getSystemConfig(env) {
       const kvData = await env.DRIVE_KV.get("SYSTEM_CONFIG", { type: "json" });
       if (kvData) {
         if (typeof kvData.siteName === "string" && kvData.siteName.trim()) config.siteName = kvData.siteName.trim();
+        if (typeof kvData.siteSubtitle === "string") config.siteSubtitle = kvData.siteSubtitle.trim();
         if (typeof kvData.accessPassword === "string") config.accessPassword = kvData.accessPassword.trim();
         if (typeof kvData.adminPassword === "string" && kvData.adminPassword.trim()) config.adminPassword = kvData.adminPassword.trim();
         if (typeof kvData.requirePassword === "boolean") config.requirePassword = kvData.requirePassword;
+        if (typeof kvData.tgBotToken === "string") config.tgBotToken = kvData.tgBotToken.trim();
+        if (typeof kvData.tgAllowedUsers === "string") config.tgAllowedUsers = kvData.tgAllowedUsers.trim();
+        if (typeof kvData.tgUploadFolderId === "string") config.tgUploadFolderId = kvData.tgUploadFolderId.trim();
         return config;
       }
     } catch (_) {}
@@ -134,6 +150,9 @@ export async function getSystemConfig(env) {
     if (typeof cachedDriveConfig.siteName === "string" && cachedDriveConfig.siteName.trim()) {
       config.siteName = cachedDriveConfig.siteName.trim();
     }
+    if (typeof cachedDriveConfig.siteSubtitle === "string") {
+      config.siteSubtitle = cachedDriveConfig.siteSubtitle.trim();
+    }
     if (typeof cachedDriveConfig.accessPassword === "string") {
       config.accessPassword = cachedDriveConfig.accessPassword.trim();
     }
@@ -143,13 +162,26 @@ export async function getSystemConfig(env) {
     if (typeof cachedDriveConfig.requirePassword === "boolean") {
       config.requirePassword = cachedDriveConfig.requirePassword;
     }
+    if (typeof cachedDriveConfig.tgBotToken === "string") {
+      config.tgBotToken = cachedDriveConfig.tgBotToken.trim();
+    }
+    if (typeof cachedDriveConfig.tgAllowedUsers === "string") {
+      config.tgAllowedUsers = cachedDriveConfig.tgAllowedUsers.trim();
+    }
+    if (typeof cachedDriveConfig.tgUploadFolderId === "string") {
+      config.tgUploadFolderId = cachedDriveConfig.tgUploadFolderId.trim();
+    }
   }
 
   // 3. 内存兜底
   if (memoryConfig.siteName) config.siteName = memoryConfig.siteName;
+  if (memoryConfig.siteSubtitle !== "") config.siteSubtitle = memoryConfig.siteSubtitle;
   if (memoryConfig.accessPassword !== "") config.accessPassword = memoryConfig.accessPassword;
   if (memoryConfig.adminPassword) config.adminPassword = memoryConfig.adminPassword;
   if (memoryConfig.requirePassword !== null) config.requirePassword = memoryConfig.requirePassword;
+  if (memoryConfig.tgBotToken !== "") config.tgBotToken = memoryConfig.tgBotToken;
+  if (memoryConfig.tgAllowedUsers !== "") config.tgAllowedUsers = memoryConfig.tgAllowedUsers;
+  if (memoryConfig.tgUploadFolderId !== "") config.tgUploadFolderId = memoryConfig.tgUploadFolderId;
 
   return config;
 }
@@ -164,6 +196,7 @@ export async function saveSystemConfig(env, newConfig) {
 
   // 更新内存
   if (typeof newConfig.siteName === "string") memoryConfig.siteName = newConfig.siteName.trim();
+  if (typeof newConfig.siteSubtitle === "string") memoryConfig.siteSubtitle = newConfig.siteSubtitle.trim();
   if (typeof newConfig.accessPassword === "string") memoryConfig.accessPassword = newConfig.accessPassword.trim();
   if (typeof newConfig.adminPassword === "string" && newConfig.adminPassword.trim()) {
     memoryConfig.adminPassword = newConfig.adminPassword.trim();
@@ -171,6 +204,9 @@ export async function saveSystemConfig(env, newConfig) {
   if (typeof newConfig.requirePassword === "boolean") {
     memoryConfig.requirePassword = newConfig.requirePassword;
   }
+  if (typeof newConfig.tgBotToken === "string") memoryConfig.tgBotToken = newConfig.tgBotToken.trim();
+  if (typeof newConfig.tgAllowedUsers === "string") memoryConfig.tgAllowedUsers = newConfig.tgAllowedUsers.trim();
+  if (typeof newConfig.tgUploadFolderId === "string") memoryConfig.tgUploadFolderId = newConfig.tgUploadFolderId.trim();
 
   let persisted = "memory";
 

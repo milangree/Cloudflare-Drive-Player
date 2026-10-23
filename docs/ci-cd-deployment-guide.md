@@ -1,29 +1,46 @@
-# Cloudflare Pages CI/CD 流水线与部署运维指南 (Deployment & Troubleshooting)
+<div align="center">
 
-本文档面向运维工程师与开发者，详细阐述基于 GitHub Actions 与 Cloudflare Pages 的自动化持续集成与交付 (CI/CD) 架构、环境变量/密钥配置规范、冒烟测试机制以及常见构建故障的排查手册。
+# Cloudflare Pages CI/CD Pipeline & Deployment Guide
 
----
+<p align="center">
+  <a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat&logo=githubactions" alt="GitHub Actions"></a>
+  <a href="https://pages.cloudflare.com/"><img src="https://img.shields.io/badge/Deploy-Cloudflare%20Pages-f38020?style=flat&logo=cloudflare" alt="Cloudflare Pages"></a>
+  <img src="https://img.shields.io/badge/Healthcheck-Exponential%20Backoff-emerald?style=flat" alt="Healthcheck">
+</p>
 
-## 目录
-- [1. 流水线架构与阶段设计](#1-流水线架构与阶段设计)
-  - [阶段 1：质量与安全门禁 (Code Quality & Security Audit)](#阶段-1质量与安全门禁-code-quality--security-audit)
-  - [阶段 2：Cloudflare Pages 部署与冒烟测试 (Deploy to Cloudflare Pages)](#阶段-2cloudflare-pages-部署与冒烟测试-deploy-to-cloudflare-pages)
-- [2. 部署凭据与 GitHub Secrets 配置](#2-部署凭据与-github-secrets-配置)
-  - [必备 GitHub Actions Secrets](#必备-github-actions-secrets)
-  - [Cloudflare Pages 生产环境变量配置](#cloudflare-pages-生产环境变量配置)
-- [3. 边缘路由隔离与性能优化原理 (`_routes.json`)](#3-边缘路由隔离与性能优化原理-_routesjson)
-- [4. 冒烟测试与边缘预热机制 (`healthcheck.js`)](#4-冒烟测试与边缘预热机制-healthcheckjs)
-- [5. 故障排查手册 (Troubleshooting Guide)](#5-故障排查手册-troubleshooting-guide)
-  - [案例 A：GitHub Actions 冒烟测试报 HTTP 500 (Run 39524993381 典型案例)](#案例-agithub-actions-冒烟测试报-http-500-run-39524993381-典型案例)
-  - [案例 B：Wrangler 部署报 Authentication error (10000)](#案例-bwrangler-部署报-authentication-error-10000)
-  - [案例 C：页面提示“未检测到服务账号凭据”](#案例-c页面提示未检测到服务账号凭据)
-  - [案例 D：Google Drive 报 403 `The user does not have sufficient permissions`](#案例-dgoogle-drive-报-403-the-user-does-not-have-sufficient-permissions)
+<p align="center">
+  <b>English</b> · <a href="ci-cd-deployment-guide_zh.md">简体中文</a>
+</p>
+
+</div>
 
 ---
 
-## 1. 流水线架构与阶段设计
+This guide provides DevOps engineers and developers with a comprehensive reference for automated continuous integration and delivery (CI/CD) with GitHub Actions and Cloudflare Pages. It covers pipeline architecture, secrets configuration, Anycast edge smoke testing, and an incident troubleshooting runbook.
 
-流水线定义文件位于 `.github/workflows/ci-cd.yml`，划分为严密的双阶段质量闸门：
+---
+
+## 📑 Table of Contents
+
+- [1. Pipeline Architecture & Stage Design](#1-pipeline-architecture--stage-design)
+  - [Stage 1: Code Quality & Security Audit](#stage-1-code-quality--security-audit)
+  - [Stage 2: Cloudflare Pages Deployment & Smoke Testing](#stage-2-cloudflare-pages-deployment--smoke-testing)
+- [2. Deployment Credentials & GitHub Secrets](#2-deployment-credentials--github-secrets)
+  - [Required GitHub Actions Secrets](#required-github-actions-secrets)
+  - [Cloudflare Pages Production Environment Variables](#cloudflare-pages-production-environment-variables)
+- [3. Edge Routing Isolation & Performance (`_routes.json`)](#3-edge-routing-isolation--performance-_routesjson)
+- [4. Smoke Testing & Edge Warmup Mechanism (`healthcheck.js`)](#4-smoke-testing--edge-warmup-mechanism-healthcheckjs)
+- [5. Troubleshooting Guide](#5-troubleshooting-guide)
+  - [Case A: Post-Deploy Smoke Test Reports HTTP 500](#case-a-post-deploy-smoke-test-reports-http-500)
+  - [Case B: Wrangler Deployment Authentication Error (10000)](#case-b-wrangler-deployment-authentication-error-10000)
+  - [Case C: "Missing Service Account Credentials" on Page Load](#case-c-missing-service-account-credentials-on-page-load)
+  - [Case D: Google Drive 403 "The user does not have sufficient permissions"](#case-d-google-drive-403-the-user-does-not-have-sufficient-permissions)
+
+---
+
+## 1. Pipeline Architecture & Stage Design
+
+The workflow definition resides in `.github/workflows/ci-cd.yml`, structured as a strict dual-stage quality gate:
 
 ```mermaid
 graph TD
@@ -43,60 +60,61 @@ graph TD
     D3 -->|Pass| E[Production Live: pages.dev]
 ```
 
-### 阶段 1：质量与安全门禁 (Code Quality & Security Audit)
-- **代码静态与契约门禁校验** (`npm run test:syntax` -> `node scripts/ci-check.js`)：
-  - **步骤 1/7**：递归扫描 `functions/` 与 `public/js/` 下所有 JavaScript 文件，使用 `node --check` 进行原生 AST 解析，确保无语法损坏。
-  - **步骤 2/7**：检查静态文件依赖完整性（`index.html`、`style.css`、`app.js`、`favicon.svg`、`_routes.json`、`_headers`）及 `_routes.json` 边缘路由隔离规则。
-  - **步骤 3/7**：校验 `wrangler.toml` 配置文件有效性与输出目录配置。
-  - **步骤 4/7**：校验流媒体 API 契约（MKV `video/x-matroska` MIME 规范化、`Accept-Ranges: bytes` 与 `Content-Range` HTTP 206 分片透传）。
-  - **步骤 5/7**：【用户需求 2 门禁】Google 预览零遮挡安全沙箱模型与防弹窗门禁（反退化阻断：严禁右上角遮挡层；沙箱严格阻断 `allow-popups` 与 `allow-top-navigation`）。
-  - **步骤 6/7**：【用户需求 1 门禁】客户端双阶自适应降级播放与智能选源契约（先验探测 + 动态看门狗 + 自动切换云端转码预览）。
-  - **步骤 7/7**：【用户需求 3 门禁】播放器视窗极简 Header 结构（核心 4 项控件：文件名/本地播放/最大化/关闭；移除冗余堆砌控件）及 CSP 安全响应头（放行 `drive.google.com` 且 `nosniff`）。
-- **依赖安全漏洞审计** (`npm audit --omit=dev --audit-level=high`)：
-  - 阻断生产运行时高危漏洞，同时进行开发工具链依赖预警，保障供应链安全。
+### Stage 1: Code Quality & Security Audit
+- **Static Syntax & Contract Gate** (`npm run test:syntax` -> `node scripts/ci-check.js`):
+  - **Step 1/7**: Recursively scans all JavaScript files in `functions/` and `public/js/` via Node.js native AST parsing to eliminate syntax defects.
+  - **Step 2/7**: Validates presence and integrity of static dependencies (`index.html`, `style.css`, `app.js`, `favicon.svg`, `_routes.json`, `_headers`) and routing isolation rules.
+  - **Step 3/7**: Verifies `wrangler.toml` configuration syntax and build output paths.
+  - **Step 4/7**: Verifies streaming media contracts (MKV `video/x-matroska` MIME normalization, `Accept-Ranges: bytes`, and `Content-Range` HTTP 206 passthrough).
+  - **Step 5/7**: Verifies Google preview zero-occlusion security sandbox constraints (anti-regression: no overlay masks; iframe sandboxing strictly excludes `allow-popups` and `allow-top-navigation`).
+  - **Step 6/7**: Verifies client dual-phase adaptive playback fallback and smart source selection contracts.
+  - **Step 7/7**: Verifies minimalist 4-in-1 player header structure and security response headers (CSP whitelisting `drive.google.com` and `nosniff`).
+- **Dependency Vulnerability Audit** (`npm audit --omit=dev --audit-level=high`):
+  - Enforces zero high-severity production runtime vulnerabilities while issuing warnings for dev toolchain dependencies.
 
-### 阶段 2：Cloudflare Pages 部署与冒烟测试 (Deploy to Cloudflare Pages)
-- **Wrangler Pages 发布** (`cloudflare/wrangler-action@v3`)：
-  - 上传 `public` 静态资源目录并编译打包 `functions` 边缘 Worker。
-  - 分支规则：`main` 分支发布至生产环境 (`--branch=main`)，其他分支发布为独立预览环境（Preview URL）。
-- **边缘预热与自适应冒烟测试** (`node scripts/healthcheck.js`)：
-  - 具备 15 秒全球 Anycast 边缘广播缓冲 + `waitForEdgeReadiness` 预热轮询。
-  - 对 8 个核心端点与标头规范执行指数退避重试探测（1.5s -> 2.25s -> 3.37s）：
-    1. `GET /`：首页 HTML 渲染与 Content-Type (`text/html`) 验证。
-    2. `GET /`：边缘安全响应头规范 (`X-Content-Type-Options: nosniff`)。
-    3. `GET /`：CSP 安全策略合规性 (`Content-Security-Policy` 包含 `drive.google.com`)。
-    4. `GET /css/style.css`：样式表静态 CDN 直通与 Content-Type (`text/css`) 验证。
-    5. `GET /js/app.js`：核心交互脚本加载与 Content-Type (`application/javascript`)。
-    6. `GET /api/info`：Functions 边缘计算与配置接口 JSON 响应。
-    7. `GET /api/list`：目录文件树索引 API 与 items 契约。
-    8. `OPTIONS /api/stream/test-probe`：媒体流 CORS 跨域预检与标头暴露。
+### Stage 2: Cloudflare Pages Deployment & Smoke Testing
+- **Wrangler Pages Deployment** (`cloudflare/wrangler-action@v3`):
+  - Uploads the `public` static directory and compiles `functions` edge workers.
+  - Deploys `main` branch to production (`--branch=main`) and other branches to preview environments with distinct preview URLs.
+- **Edge Warmup & Resilient Smoke Test** (`node scripts/healthcheck.js`):
+  - Incorporates a 15-second Anycast edge propagation buffer with `waitForEdgeReadiness` polling.
+  - Probes 8 critical endpoints with exponential backoff retries (1.5s -> 2.25s -> 3.37s):
+    1. `GET /`: Validates root HTML status and `text/html` Content-Type.
+    2. `GET /`: Validates security headers (`X-Content-Type-Options: nosniff`).
+    3. `GET /`: Validates CSP compliance (allowing `drive.google.com`).
+    4. `GET /css/style.css`: Confirms direct CDN stylesheet delivery (`text/css`).
+    5. `GET /js/app.js`: Validates application JavaScript delivery (`application/javascript`).
+    6. `GET /api/info`: Tests Functions edge runtime and JSON response.
+    7. `GET /api/list`: Verifies directory indexing contract and item payloads.
+    8. `OPTIONS /api/stream/test-probe`: Tests CORS pre-flight headers and exposure.
 
 ---
 
-## 2. 部署凭据与 GitHub Secrets 配置
+## 2. Deployment Credentials & GitHub Secrets
 
-### 必备 GitHub Actions Secrets
-前往 GitHub 仓库 -> **Settings** -> **Secrets and variables** -> **Actions** -> **Repository secrets** 添加：
+### Required GitHub Actions Secrets
+In your GitHub repository, navigate to **Settings** -> **Secrets and variables** -> **Actions** -> **Repository secrets** and configure:
 
-| Secret 键名 | 说明 | 获取方式 |
+| Secret Name | Description | Source |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | 具有 Cloudflare Pages 管理权限的 API 令牌 | Cloudflare Dashboard -> **My Profile** -> **API Tokens** -> **Create Token** -> 选择模板 **Edit Cloudflare Workers**，权限确保包含 `Account -> Cloudflare Pages -> Edit` |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID | Cloudflare Dashboard 任意域名概览页或 Workers & Pages 首页右侧侧边栏中的 **Account ID** (32位十六进制字符串) |
+| `CLOUDFLARE_API_TOKEN` | API Token with Cloudflare Pages Edit permissions | Cloudflare Dashboard -> **My Profile** -> **API Tokens** -> **Create Token** -> Use template **Edit Cloudflare Workers**, ensuring `Account -> Cloudflare Pages -> Edit` is granted |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID | Available in the right sidebar of Cloudflare Dashboard Workers & Pages overview (32-character hexadecimal string) |
 
-### Cloudflare Pages 生产环境变量配置
-进入 Cloudflare Dashboard -> **Workers & Pages** -> 选择 `cf-pages-drive-player` 项目 -> **Settings** -> **Environment variables**：
+### Cloudflare Pages Production Environment Variables
+In Cloudflare Dashboard, go to **Workers & Pages** -> select your `cf-pages-drive-player` project -> **Settings** -> **Environment variables**:
 
-| 变量名 | 类型 | 说明 |
+| Variable | Type | Description |
 | :--- | :---: | :--- |
-| `SERVICE_ACCOUNT_JSON` | **Secret** (加密文本) | Google Cloud 下载的服务账号私钥 JSON 文本（原样完整粘贴） |
-| `ROOT_FOLDER_ID` | 纯文本 | 挂载的总文件夹 ID（从 Google Drive 地址栏获取） |
-| `SITE_NAME` | 纯文本 (选填) | 自定义站点名称（如 `我的影视库`） |
+| `SERVICE_ACCOUNT_JSON` | **Secret** (Encrypted) | Full Google Cloud service account JSON private key content |
+| `ROOT_FOLDER_ID` | Plain text | Mounted Google Drive folder ID (extracted from browser address bar) |
+| `SITE_NAME` | Plain text (Optional) | Custom site title (e.g., `My Media Vault`) |
+| `SITE_SUBTITLE` | Plain text (Optional) | Custom subtitle or tagline |
 
 ---
 
-## 3. 边缘路由隔离与性能优化原理 (`_routes.json`)
+## 3. Edge Routing Isolation & Performance (`_routes.json`)
 
-在 `public/_routes.json` 中配置了明确的路由分离规则：
+`public/_routes.json` defines explicit routing boundaries:
 ```json
 {
   "version": 1,
@@ -107,82 +125,82 @@ graph TD
 }
 ```
 
-### 为什么该配置至关重要？
-1. **防止 Worker 冷启动拖垮静态资源**：
-   若不限制，Cloudflare Pages 会默认让所有请求（包括 `/`、`/css/style.css`、图片等）经过 Functions 处理。在部署初期的 DNS 收敛期，Worker 冷启动可能导致静态请求出现 500 错误。
-2. **极速 CDN 直通**：
-   通过 `include: ["/api/*"]`，浏览器请求 `/` 与 `/css/style.css` 时直接由 Cloudflare 离用户最近的 Anycast 边缘缓存节点响应，首字节时间 (TTFB) 降至 20ms 以内，且不消耗 Worker 每日免费请求额度。
-3. **架构职责解耦**：
-   全局中间件下沉至 `functions/api/_middleware.js`，严格只对 `/api/*` 生效。
+### Why This Configuration Is Essential
+1. **Prevents Worker Cold Starts from Impacting Static Assets**:
+   Without explicit routing rules, Cloudflare Pages defaults to routing every request (including `/`, `/css/style.css`, and images) through Functions. During edge DNS convergence, worker cold starts can cause transient 500 errors on static assets.
+2. **Direct Anycast CDN Delivery**:
+   With `include: ["/api/*"]`, requests for `/` and static assets bypass the Functions compute layer entirely, served directly from Cloudflare's nearest edge caches with sub-20ms TTFB. This also conserves daily Worker request quotas.
+3. **Decoupled Architecture**:
+   Global middleware is confined to `functions/api/_middleware.js`, strictly executing on API routes.
 
 ---
 
-## 4. 冒烟测试与边缘预热机制 (`healthcheck.js`)
+## 4. Smoke Testing & Edge Warmup Mechanism (`healthcheck.js`)
 
-在本地或 CI 中可随时执行冒烟测试：
+You can execute the automated smoke test locally or within CI:
 ```bash
-# 本地测试已部署实例
+# Test against a deployed instance
 node scripts/healthcheck.js "https://cf-pages-drive-player.pages.dev"
 
-# 无参数运行时输出端点契约说明
+# Run without arguments to display endpoint contract documentation
 node scripts/healthcheck.js
 ```
 
-### 冒烟测试验证矩阵：
-| 探测端点 | 方法 | 期望状态码 | 校验逻辑 |
+### Smoke Test Validation Matrix:
+| Endpoint | Method | Expected Status | Validation Logic |
 | :--- | :---: | :---: | :--- |
-| `/` | `GET` | 200 | `Content-Type` 必须包含 `text/html` |
-| `/css/style.css` | `GET` | 200 | `Content-Type` 必须包含 `text/css` |
-| `/api/info` | `GET` | 200 | JSON 正文必须解析且包含布尔类型 `success` |
-| `/api/stream/test-probe` | `OPTIONS` | 204 / 200 | 标头 `Access-Control-Allow-Origin` 必须为 `*` |
+| `/` | `GET` | 200 | `Content-Type` must contain `text/html` |
+| `/css/style.css` | `GET` | 200 | `Content-Type` must contain `text/css` |
+| `/api/info` | `GET` | 200 | JSON body must parse and contain boolean `success` |
+| `/api/stream/test-probe` | `OPTIONS` | 204 / 200 | Header `Access-Control-Allow-Origin` must equal `*` |
 
 ---
 
-## 5. 故障排查手册 (Troubleshooting Guide)
+## 5. Troubleshooting Guide
 
-### 案例 A：GitHub Actions 冒烟测试报 HTTP 500 (Run 39524993381 典型案例)
-- **现象**：
-  流水线部署步骤成功，但在 `Post-deploy Smoke Test / Healthcheck` 出现：
+### Case A: Post-Deploy Smoke Test Reports HTTP 500
+- **Symptoms**:
+  Deployment finishes with exit code 0, but `Post-deploy Smoke Test / Healthcheck` fails:
   ```text
-  ❌ [FAIL] 首页静态资源状态 (GET /) -> HTTP 500 (校验未通过)
-  ❌ [FAIL] 样式表完整性 (GET /css/style.css) -> HTTP 500 (校验未通过)
-  ✅ [PASS] 系统凭证与站点信息接口 (GET /api/info) -> HTTP 200
+  ❌ [FAIL] Root HTML status (GET /) -> HTTP 500 (Check failed)
+  ❌ [FAIL] Stylesheet integrity (GET /css/style.css) -> HTTP 500 (Check failed)
+  ✅ [PASS] System credentials & site info (GET /api/info) -> HTTP 200
   ```
-- **根本原因**：
-  1. 根目录下存在全局中间件 `functions/_middleware.js`，拦截了所有静态资源请求。
-  2. 部署完成后 Cloudflare 控制面完成并不代表全球边缘 Anycast 节点的数据面资产分发已全部完成（存在 2~5 秒微小同步时差）。
-  3. 旧冒烟测试属于单次刚性请求，一旦命中尚未完全收敛的边缘节点即刻判定失败。
-- **根治措施**：
-  1. 将中间件移至 `functions/api/_middleware.js`。
-  2. 在 `public/_routes.json` 声明 `include: ["/api/*"]`。
-  3. 冒烟测试引入预热机制与指数退避重试（最多重试 4 次）。
+- **Root Cause**:
+  1. A root-level middleware `functions/_middleware.js` was intercepting static files;
+  2. Cloudflare control plane deployment completion precedes global edge Anycast data plane propagation by 2–5 seconds;
+  3. Rigid single-request health checks fail if querying an edge node still converging.
+- **Remediation**:
+  1. Move middleware to `functions/api/_middleware.js`;
+  2. Maintain `include: ["/api/*"]` in `public/_routes.json`;
+  3. Use exponential backoff retries (up to 4 attempts) in the healthcheck script. See [ADR-001](adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md) for architectural design details.
 
 ---
 
-### 案例 B：Wrangler 部署报 Authentication error (10000)
-- **现象**：
-  `Deploy to Cloudflare Pages` 步骤报 `Authentication error [code: 10000]`。
-- **排查步骤**：
-  1. 检查 GitHub 仓库 Secrets 中 `CLOUDFLARE_API_TOKEN` 是否被意外撤销或过期。
-  2. 确认 Token 权限包含 `Cloudflare Pages: Edit`。
-  3. 检查 `CLOUDFLARE_ACCOUNT_ID` 是否与 API Token 所属账户严格一致。
+### Case B: Wrangler Deployment Authentication Error (10000)
+- **Symptoms**:
+  The `Deploy to Cloudflare Pages` step exits with `Authentication error [code: 10000]`.
+- **Troubleshooting Steps**:
+  1. Check whether `CLOUDFLARE_API_TOKEN` in GitHub Secrets has expired or been revoked;
+  2. Ensure the token has `Cloudflare Pages: Edit` permissions;
+  3. Confirm `CLOUDFLARE_ACCOUNT_ID` matches the account that owns the API token.
 
 ---
 
-### 案例 C：页面提示“未检测到服务账号凭据”
-- **现象**：
-  打开网页弹出黄色提示，或者 `/api/info` 返回 `configured: false`。
-- **排查步骤**：
-  1. 登录 Cloudflare Pages 控制台 -> Settings -> Environment variables -> 查看 `Production` 环境下是否存在 `SERVICE_ACCOUNT_JSON`。
-  2. 确认粘贴的 JSON 内容没有被截断（开头为 `{"type": "service_account"...}`）。
-  3. **重要**：环境变量修改后，必须点击最近一次部署右侧的 **Retry deployment (重新部署)**，环境变量才能注入当前运行容器。
+### Case C: "Missing Service Account Credentials" on Page Load
+- **Symptoms**:
+  A yellow warning banner appears on the web page, or `/api/info` returns `configured: false`.
+- **Troubleshooting Steps**:
+  1. In Cloudflare Pages Dashboard -> Settings -> Environment variables, verify `SERVICE_ACCOUNT_JSON` exists in the `Production` environment;
+  2. Verify the pasted JSON is complete (starts with `{"type": "service_account"...}`);
+  3. **Important**: After adding or editing environment variables, click **Retry deployment** on the latest build to re-bake variables into the active container.
 
 ---
 
-### 案例 D：Google Drive 报 403 `The user does not have sufficient permissions`
-- **现象**：
-  点击播放或列出文件时提示 403 权限不足。
-- **排查步骤**：
-  1. 打开服务账号 JSON，复制其中的 `client_email` 地址。
-  2. 在 Google Drive 网页端找到挂载的总文件夹，点击「共享」。
-  3. 将该邮箱添加为「查看者 (Viewer)」或「内容管理员 (Content Manager)」。
+### Case D: Google Drive 403 "The user does not have sufficient permissions"
+- **Symptoms**:
+  Listing files or starting streams yields 403 Forbidden.
+- **Troubleshooting Steps**:
+  1. Open your service account JSON and copy `client_email`;
+  2. Open Google Drive in your browser, locate your mounted root folder, and click "Share";
+  3. Add `client_email` as **Viewer** (for read-only) or **Content Manager / Editor** (for file modifications).

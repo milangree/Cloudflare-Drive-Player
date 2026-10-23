@@ -473,6 +473,59 @@
           </div>
 
           <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3.5">
+            <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span class="flex items-center gap-1.5">
+                <i data-lucide="send" class="w-3.5 h-3.5 text-sky-400"></i>
+                Telegram 媒体转存机器人
+              </span>
+              <span id="tg-status-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400">
+                未启用
+              </span>
+            </h4>
+            <p class="text-[10px] text-slate-400">
+              设置 Telegram Bot Token 后，向机器人直接发送视频、音乐、文档或照片，系统将自动通过 Google Drive 官方 API 高速同步转存入云盘。
+            </p>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Telegram Bot Token</label>
+              <input 
+                type="password" 
+                id="cfg-tg-bot-token" 
+                placeholder="例如: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ..." 
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono"
+              />
+              <p class="text-[10px] text-slate-500 mt-1">在 Telegram 中向 @BotFather 发送 /newbot 创建并获取此 Token</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">转存目标文件夹 ID (可选)</label>
+                <input 
+                  type="text" 
+                  id="cfg-tg-upload-folder" 
+                  placeholder="留空则存入默认根目录" 
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">许可用户白名单 (可选)</label>
+                <input 
+                  type="text" 
+                  id="cfg-tg-allowed-users" 
+                  placeholder="如: @username 或 123456789 (逗号分隔)" 
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+            </div>
+            <!-- 一键绑定 Webhook 快捷按钮 -->
+            <div class="pt-1 flex items-center justify-between border-t border-slate-800/40">
+              <span class="text-[10px] text-slate-400" id="tg-webhook-info-text">保存 Token 后可一键向 Telegram 注册 Webhook</span>
+              <button type="button" id="btn-register-tg-webhook" class="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-xs font-medium transition-colors flex items-center gap-1">
+                <i data-lucide="zap" class="w-3 h-3"></i>
+                <span>一键绑定 Webhook</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3.5">
             <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <i data-lucide="key-round" class="w-3.5 h-3.5 text-emerald-500"></i>
               后台管理员密码

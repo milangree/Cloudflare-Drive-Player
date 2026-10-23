@@ -1,82 +1,99 @@
-# 播放器交互架构、自适应降级状态机与零遮挡视窗使用手册 (Player Architecture & User Guide)
+<div align="center">
 
-> 本文档面向全栈工程师、前端开发者、系统运维与高级用户，深入阐述 Cloudflare Drive Player 在流媒体解码兼容性检测、W3C HTML5 iframe 原生安全沙箱隔离以及极简沉浸式视窗架构的技术实现细节与使用指南。
+# Player Architecture, Adaptive Failover State Machine & User Guide
 
----
+<p align="center">
+  <img src="https://img.shields.io/badge/Player-Artplayer%205.x-ea580c?style=flat" alt="Artplayer 5.x">
+  <img src="https://img.shields.io/badge/Failover-Dual--Phase%20Watchdog-blue?style=flat" alt="Dual-Phase Watchdog">
+  <img src="https://img.shields.io/badge/Viewport-Zero--Occlusion-emerald?style=flat" alt="Zero-Occlusion Viewport">
+</p>
 
-## 目录
-- [1. 背景与三大核心诉求](#1-背景与三大核心诉求)
-- [2. 核心架构与技术实现原理](#2-核心架构与技术实现原理)
-  - [2.1 双阶段智能自适应降级状态机](#21-双阶段智能自适应降级状态机)
-  - [2.2 零遮挡 W3C 原生安全沙箱模型](#22-零遮挡-w3c-原生安全沙箱模型)
-  - [2.3 极简 4 合 1 纯净控制台架构](#23-极简-4-合-1-纯净控制台架构)
-- [3. 外部播放器调用协议白皮书 (URL Schemes)](#3-外部播放器调用协议白皮书-url-schemes)
-- [4. 浏览器解码兼容性与自动选源矩阵](#4-浏览器解码兼容性与自动选源矩阵)
-- [5. 质量验证与开发者调试指南](#5-质量验证与开发者调试指南)
+<p align="center">
+  <b>English</b> · <a href="player-architecture-and-user-guide_zh.md">简体中文</a>
+</p>
 
----
-
-## 1. 背景与三大核心诉求
-
-在 Web 浏览器播放 Google Drive 媒体资源时，开发者和用户长期面临三个根本性的体验障碍：
-
-1. **解码能力异构与操作割裂**：
-   - 媒体文件常采用 MKV 封装，或包含 HEVC/H.265 10bit、DTS/AC-3 商业多声道音频。在不同平台（如 macOS/iOS Safari 不支持 MKV 封装、未装扩展的 Windows Chrome 仅能解码音频而黑屏）下，传统做法是弹出警告让用户手动点击切换，用户体验极差。
-   - **改进目标**：**全自动无感降级**。由前端自动侦测环境；一旦环境不支持或起播卡死，自动切源至 Google 云端转码，告别手动排查。
-2. **Google 预览右上角弹窗与遮罩层伪影**：
-   - Google Drive Web Preview 页面右上角存在跳转按钮（Pop-out）。旧系统为了阻断该跳转，在视频右上角覆盖了一块半透明或透明的物理拦截 `div`，导致画面被遮挡、鼠标光标抖动，且影响全屏控制。
-   - **改进目标**：**彻底移除物理遮罩层，保持 100% 画面纯净**；同时利用底层规范级安全沙箱与 CSP，静默阻断任何弹窗。
-3. **播放器视窗拥挤与视觉噪声**：
-   - 旧版 Header 堆砌了连播控制组、外挂字幕面板、下载按钮、直链按钮等大量元素，小屏极易折行。
-   - **改进目标**：**极简 Header 四合一**：严格聚焦「① 文件名（自适应截断/全选）」、「② 调用本地播放器」、「③ 最大化/还原」、「④ 关闭」，紧随其后是开阔沉浸的播放画面。
+</div>
 
 ---
 
-## 2. 核心架构与技术实现原理
+This document provides full-stack engineers, frontend developers, and power users with in-depth technical implementation details and user guidance for Cloudflare Drive Player. It covers media decode compatibility detection, zero-occlusion viewport geometry, and minimalist player window architecture.
 
-### 2.1 双阶段智能自适应降级状态机
+---
 
-系统引入了前置先验探测与动态运行时看门狗双阶段闭环：
+## 📑 Table of Contents
+
+- [1. Background & Core Design Objectives](#1-background--core-design-objectives)
+- [2. Core Architecture & Technical Implementation](#2-core-architecture--technical-implementation)
+  - [2.1 Dual-Phase Adaptive Failover State Machine](#21-dual-phase-adaptive-failover-state-machine)
+  - [2.2 Zero-Occlusion Pure Viewport Architecture](#22-zero-occlusion-pure-viewport-architecture)
+  - [2.3 Minimalist 4-in-1 Header Architecture](#23-minimalist-4-in-1-header-architecture)
+- [3. External Player Launch Protocols (URL Schemes)](#3-external-player-launch-protocols-url-schemes)
+- [4. Browser Decode Compatibility & Source Routing Matrix](#4-browser-decode-compatibility--source-routing-matrix)
+- [5. Quality Assurance & Developer Debugging Guide](#5-quality-assurance--developer-debugging-guide)
+
+---
+
+## 1. Background & Core Design Objectives
+
+When streaming media directly from Google Drive inside web browsers, users and developers face three critical obstacles:
+
+1. **Heterogeneous Decode Capabilities & Manual Troubleshooting Friction**:
+   - Media libraries often contain MKV containers, HEVC/H.265 10-bit HDR video, or commercial multi-channel audio tracks (DTS, AC-3, TrueHD). Browser environments vary wildly: Safari rejects MKV containers outright; Windows Chrome without HEVC extensions plays audio while remaining stuck on a black screen. Historically, players showed warning banners requiring users to manually select cloud transcoding.
+   - **Objective**: **Fully automated seamless failover**. The frontend proactively inspects media formats and runtime decode states; if unsupported or stalled, it automatically switches to Google Cloud transcoding preview without user intervention.
+2. **Google Preview Pop-Out Icons & Overlay Mask Artifacts**:
+   - Google Drive's embedded preview includes a pop-out button in the top-right corner. Past workarounds placed a transparent or translucent overlay `div` over that corner to block clicks, which caused cursor flickering, visual distortion, and blocked legitimate media controls.
+   - **Objective**: **Completely eliminate physical overlay masks** while using CSS margin offset clipping and CSP headers to invisibly neutralize unwanted popups.
+3. **Player Window Clutter & Visual Noise**:
+   - Cluttered headers filled with episode selectors, subtitle panels, download links, and direct stream URLs cause awkward text wrapping on mobile devices.
+   - **Objective**: **Strict 4-in-1 Minimalist Header**: Focus exclusively on (1) Filename (with auto-truncation and select-all), (2) External Player Launcher, (3) Maximize/Restore, and (4) Close, presenting an expansive media canvas.
+
+---
+
+## 2. Core Architecture & Technical Implementation
+
+### 2.1 Dual-Phase Adaptive Failover State Machine
+
+The playback pipeline implements a closed-loop system combining pre-flight inspection with runtime watchdog monitoring:
 
 ```mermaid
 flowchart TD
-    A[用户点击视频文件] --> B{阶段一: 静态先验探测}
-    B -->|容器/编码不支持| C[直接无感切换 Google 云端转码预览]
-    B -->|先验检查通过| D[初始化 ArtPlayer 原生解码内核]
-    D --> E[启动动态双阶看门狗]
-    E --> F{2.0s 快速巡检}
-    F -->|currentTime > 0.3 但 hasVideo=false 或 video.error| C
-    F -->|画面正常渲染| G{4.0s 深度稳定性巡检}
-    G -->|卡死/超时/readyState<2| C
-    G -->|持续稳定| H[原生原画持续流畅播放]
+    A[User clicks media item] --> B{Phase 1: Static Pre-Flight Probe}
+    B -->|Unsupported container/codec| C[Seamlessly route to Google Cloud Preview]
+    B -->|Pre-flight checks pass| D[Initialize Artplayer native engine]
+    D --> E[Arm dynamic dual-phase watchdog]
+    E --> F{2.0s Fast Watchdog}
+    F -->|currentTime > 0.3 but hasVideo=false or video.error| C
+    F -->|Frames rendering properly| G{4.0s Deep Watchdog}
+    G -->|Stalled / Timed out / readyState < 2| C
+    G -->|Stable playback| H[Continuous direct streaming]
 ```
 
-#### 阶段一：静态先验探测 (`canBrowserPlayNatively`)
+#### Phase 1: Static Pre-Flight Inspection (`canBrowserPlayNatively`)
 
-在向 DOM 插入 `<video>` 之前，解析媒体容器与名称元数据：
-- **绝对黑名单容器**：`.avi`、`.wmv`、`.rmvb`、`.flv`、`.vob`、`.iso`。
-- **Safari MKV 特异性阻断**：WebKit 引擎在 `document.createElement('video').canPlayType('video/x-matroska')` 返回空字符串，直接标记不支持。
-- **商业多声道音频阻断**：文件名命中 `/(dts(-hd)?|truehd|atmos|ac3|eac3|ddp?5\.1)/i`，由于普通 Web 浏览器缺少杜比/DTS 商业专利授权，直接先验判定不通过。
-- **HEVC / H.265 探测**：若包含 `/(hevc|h\.?265|x265)/i`，通过 `video.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"')` 深入探测底层硬件加速；若不支持则判定失败。
+Before mounting the `<video>` element, the engine evaluates container extensions and filename metadata:
+- **Strictly Unsupported Containers**: `.avi`, `.wmv`, `.rmvb`, `.flv`, `.vob`, `.iso`.
+- **Safari MKV Block**: Safari/WebKit returns an empty string for `canPlayType('video/x-matroska')`, immediately failing pre-flight.
+- **Commercial Audio Codecs**: Filenames matching `/(dts(-hd)?|truehd|atmos|ac3|eac3|ddp?5\.1)/i` fail pre-flight because mainstream browsers lack Dolby/DTS licensing.
+- **HEVC / H.265 Inspection**: Files matching `/(hevc|h\.?265|x265)/i` are probed using `video.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"')` to test hardware acceleration support.
 
-**处理动作**：若静态探测失败，**跳过原生播放器初始化，毫秒级直接重定向至 `renderGooglePreview(item)`**。
+**Action**: If pre-flight fails, native initialization is bypassed entirely, redirecting to `renderGooglePreview(item)` in milliseconds.
 
-#### 阶段二：动态双阶看门狗 (`startMediaWatchdog`)
+#### Phase 2: Dynamic Dual-Phase Watchdog (`startMediaWatchdog`)
 
-针对 PC 端 Chrome 虽能打开 MKV 但仅有音频推进、屏幕全黑的特殊工况：
-- **快速巡检 (2.0s)**：
-  - 检查逻辑：`!video.paused && video.currentTime > 0.3 && !renderStatus.hasVideo`
-  - 判定：音频已播放超过 0.3 秒，但画面帧渲染状态依然为 `false`（或触发 `video.error`）。
-- **深度巡检 (4.0s)**：
-  - 检查逻辑：视频未暂停，但进度为 0 且 `readyState < 2`（网络挂起或解码死锁）。
+For scenarios where Chrome launches MKV playback but outputs black frames while audio plays:
+- **Fast Watchdog (2.0s)**:
+  - Check: `!video.paused && video.currentTime > 0.3 && !renderStatus.hasVideo`
+  - Condition: Audio has progressed past 0.3 seconds, but video frame rendering remains `false` (or `video.error` was fired).
+- **Deep Watchdog (4.0s)**:
+  - Check: Video is unpaused, but progress remains at 0 and `readyState < 2` (network hang or decoder deadlock).
 
-**处理动作**：看门狗捕获上述异常后，自动调用 `destroyPlayer()` 释放原生视频对象，立即无感平滑切换至 Google 云端转码通道起播，并弹出非阻断式状态 Toast 提示。
+**Action**: Once an anomaly is caught, the watchdog calls `destroyPlayer()` to release decoder resources, smoothly transitions to Google Cloud preview, and displays an informative status toast.
 
 ---
 
-### 2.2 零遮挡纯净视口与顶栏精准裁切架构
+### 2.2 Zero-Occlusion Pure Viewport Architecture
 
-为了满足用户“彻底消除右上角 Pop-out 弹出按钮遮挡视频画面，且绝不引入导致播放黑屏的破坏性受限沙箱，也绝不在画面上残留任何遮罩层”的要求，系统采用纯 CSS 视口溢出隐藏精准裁切架构：
+To eliminate popup redirects without obscuring video controls or causing decoder errors with overly restrictive sandboxes, the system employs CSS negative margin clipping:
 
 ```html
 <div id="google-preview-container" class="relative w-full h-full overflow-hidden bg-black rounded-b-2xl" style="min-height: 480px; height: 100%;">
@@ -91,48 +108,48 @@ flowchart TD
 </div>
 ```
 
-#### 机制保证与数学闭环：
-1. **顶栏彻底移出视口**：Google Drive 桌面端 Material Design 顶栏标称高度为 `56px`。通过 `top: -56px` 将包含右上角 Pop-out (在新窗口打开 ↗) 图标的整行顶栏完全移出容器裁剪边界（`overflow: hidden`），视频右上角实现 100% 纯净无遮挡。
-2. **底栏控制条 100% 无损可见**：iframe 高度配置为 `calc(100% + 56px)`，与向上推移形成精确的等量几何补偿：
+#### Mathematical & Structural Proof:
+1. **Top Bar Shifted Out of Viewport**: Google Drive's desktop Material Design header is exactly `56px` tall. By setting `top: -56px`, the entire top row containing the pop-out button is shifted outside the container's `overflow: hidden` bounding box.
+2. **100% Intact Bottom Control Bar**: The iframe height is configured as `calc(100% + 56px)`, providing exact geometric compensation:
    $$Y_{bottom} = Y_{top} + H_{iframe} = -56\text{px} + (H_{container} + 56\text{px}) = H_{container}$$
-   iframe 底部基准线与父容器底部严格贴合，Google 播放器底部的进度条、播放/暂停、全屏按钮完整保留，0 像素丢失。
-3. **解除黑屏死锁**：坚决不使用受限 `sandbox` 属性，保障 Google Drive / YouTube 内核拥有完整的加密媒体解密扩展 (EME)、第三方存储及硬件解码能力，起播率 100%。
-4. **零遮罩反退化保障**：完全废除任何实体或透明遮罩 `div`，100% 通过 `scripts/ci-check.js` 步骤 5 零遮挡反退化门禁。
-5. **CSP 边缘防线**：在静态资源响应头 `public/_headers` 中配置：
+   The bottom edge of the iframe matches the container baseline with zero pixel loss, preserving the progress bar, play/pause controls, and full-screen button.
+3. **Decoder Deadlock Elimination**: Standard sandboxing is not applied to the iframe, allowing Google Drive and YouTube media cores access to Encrypted Media Extensions (EME), cross-origin media buffers, and hardware decoding.
+4. **Zero-Occlusion Anti-Regression**: No overlay `div` masks exist in the markup, ensuring 100% compliance with CI gate step 5.
+5. **CSP Edge Guard**: Configured in `public/_headers`:
    ```http
    Content-Security-Policy: frame-src 'self' https://drive.google.com; frame-ancestors 'self';
    ```
-   严格限定仅允许嵌入 Google Drive 官方预览，杜绝任意第三方钓鱼风险。
+   Limits iframe embedding strictly to Google Drive.
 
 ---
 
-### 2.3 极简 4 合 1 纯净控制台架构
+### 2.3 Minimalist 4-in-1 Header Architecture
 
-顶部 Header 经过彻底精简，仅由 4 个原子组件构成：
+The player header is condensed into 4 atomic components:
 
 ```html
 <div id="player-header" class="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-800/80 bg-slate-900/95 select-none gap-2 sm:gap-3">
-  <!-- 1. 文件名呈现器 (支持截断/Tooltip/全选) -->
+  <!-- 1. Filename display (truncation / tooltip / select-all) -->
   <div class="flex items-center gap-2 overflow-hidden min-w-0 flex-1">
     <i data-lucide="film" class="w-4 h-4 text-brand-500 flex-shrink-0" id="player-type-icon"></i>
-    <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-100 truncate select-all min-w-0" title="点击可全选完整文件名">正在播放...</span>
+    <span id="player-file-name" class="font-medium text-xs sm:text-sm text-slate-100 truncate select-all min-w-0" title="Click to select full filename">Loading...</span>
   </div>
 
-  <!-- 功能按钮区 (核心三项) -->
+  <!-- Action controls -->
   <div class="flex items-center justify-end gap-1.5 sm:gap-2 flex-shrink-0">
-    <!-- 2. 本地播放器下拉 -->
+    <!-- 2. External player dropdown -->
     <div class="relative inline-block text-left" id="ext-player-dropdown-container">
-      <button id="ext-player-menu-btn" class="...">调用本地播放器 ▾</button>
+      <button id="ext-player-menu-btn" class="...">External Player ▾</button>
       <div id="ext-player-menu" class="hidden absolute right-0 mt-2 w-60 ...">...</div>
     </div>
 
-    <!-- 3. 最大化/还原 -->
-    <button id="player-maximize-btn" class="..." title="最大化窗口 (双击顶部栏也可最大化)">
+    <!-- 3. Maximize / Restore -->
+    <button id="player-maximize-btn" class="..." title="Maximize window (double click header to toggle)">
       <i data-lucide="maximize-2" class="w-4 h-4" id="player-maximize-icon"></i>
     </button>
 
-    <!-- 4. 关闭 -->
-    <button id="close-player-btn" class="..." title="关闭 (Esc)">
+    <!-- 4. Close -->
+    <button id="close-player-btn" class="..." title="Close (Esc)">
       <i data-lucide="x" class="w-4 h-4"></i>
     </button>
   </div>
@@ -141,137 +158,132 @@ flowchart TD
 
 ---
 
-## 3. 外部播放器调用协议白皮书 (URL Schemes)
+## 3. External Player Launch Protocols (URL Schemes)
 
-当用户希望享受本地 GPU 强力硬解、双语 ASS 特效字幕或家庭影院音响直通时，可通过「调用本地播放器」下拉菜单直接唤起客户端。
+To leverage local GPU decoding, specialized subtitle styling (ASS/SSA), or multichannel audio passthrough, users can launch desktop players from the dropdown menu.
 
-### 协议格式与示例
+### Protocol Reference & Examples
 
-假定当前媒体文件的流媒体分片直链为：
+Assuming the media item's direct streaming URL is:
 ```text
 https://cf-pages-drive-player.pages.dev/api/stream/1ABC999VideoId?filename=Inception.2010.1080p.mkv
 ```
-其 URL 编码串为：
+Its URL-encoded equivalent is:
 ```text
 https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
 ```
 
-#### 1. MPV (跨平台)
-- **URL Scheme**：`mpv://<ENCODED_URL>`
-- **触发链接**：
+#### 1. MPV (Cross-Platform)
+- **URL Scheme**: `mpv://<ENCODED_URL>`
+- **Example Link**:
   ```text
   mpv://https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
   ```
-- **终端一键命令**（点击下拉菜单中的「复制 MPV 终端命令」）：
+- **CLI Command** (copyable from the dropdown):
   ```bash
   mpv "https://cf-pages-drive-player.pages.dev/api/stream/1ABC999VideoId?filename=Inception.2010.1080p.mkv"
   ```
 
 #### 2. PotPlayer (Windows)
-- **URL Scheme**：`potplayer://<ENCODED_URL>`
-- **触发链接**：
+- **URL Scheme**: `potplayer://<ENCODED_URL>`
+- **Example Link**:
   ```text
   potplayer://https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
   ```
 
 #### 3. IINA (macOS)
-- **URL Scheme**：`iina://weblink?url=<ENCODED_URL>`
-- **触发链接**：
+- **URL Scheme**: `iina://weblink?url=<ENCODED_URL>`
+- **Example Link**:
   ```text
   iina://weblink?url=https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
   ```
 
-#### 4. VLC Media Player (全平台 / 移动端)
-- **URL Scheme**：`vlc://<ENCODED_URL>`
-- **触发链接**：
+#### 4. VLC Media Player (Cross-Platform / Mobile)
+- **URL Scheme**: `vlc://<ENCODED_URL>`
+- **Example Link**:
   ```text
   vlc://https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
   ```
 
 #### 5. Infuse (iOS / macOS / Apple TV)
-- **URL Scheme**：`infuse://x-callback-url/play?url=<ENCODED_URL>`
-- **触发链接**：
+- **URL Scheme**: `infuse://open?url=<ENCODED_URL>`
+- **Example Link**:
   ```text
-  infuse://x-callback-url/play?url=https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
+  infuse://open?url=https%3A%2F%2Fcf-pages-drive-player.pages.dev%2Fapi%2Fstream%2F1ABC999VideoId%3Ffilename%3DInception.2010.1080p.mkv
   ```
 
-#### 6. Android ExoPlayer (系统级 Intent)
-- **协议格式**：
+#### 6. Android ExoPlayer (System Intent)
+- **Protocol**:
   ```text
   intent:<RAW_STREAM_URL>#Intent;type=video/*;end
   ```
 
 ---
 
-## 4. 浏览器解码兼容性与自动选源矩阵
+## 4. Browser Decode Compatibility & Source Routing Matrix
 
-| 媒体格式 / 编码组合 | Chrome / Edge | Safari (macOS / iOS) | Firefox | 移动端 Chrome/Safari | 系统自动处理行为 |
+| Container & Codec Profile | Chrome / Edge | Safari (macOS / iOS) | Firefox | Mobile Browsers | System Routing Behavior |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **MP4 (H.264 + AAC)** | 原生硬解 | 原生硬解 | 原生硬解 | 原生硬解 | **原生 Artplayer 秒开**，支持 206 进度拖拽 |
-| **WebM (VP9 + Opus)** | 原生硬解 | 部分支持 (Safari 14.1+) | 原生硬解 | 原生硬解 | **原生 Artplayer 秒开** |
-| **MKV (AVC / H.264 + AAC)** | 原生播放 | ❌ 不支持封装 | 原生播放 | ❌ 部分不支持 | Safari **自动先验切换 Google 云端转码**；Chrome 原生播放 |
-| **MKV (HEVC / H.265 10bit)**| 视硬解扩展而定 | ❌ 不支持封装 | 视系统硬解而定 | 视芯片硬解而定 | 若无硬解或看门狗检测黑屏，**2.0s 内无感切至转码** |
-| **MKV (DTS / TrueHD / AC-3)**| ❌ 仅有画面无声音 | ❌ 不支持封装 | ❌ 无商业授权 | ❌ 无商业授权 | **阶段一静态探测命中，直接切源至云端转码** |
-| **AVI / WMV / RMVB / ISO** | ❌ 不支持封装 | ❌ 不支持封装 | ❌ 不支持封装 | ❌ 不支持封装 | **阶段一静态拦截，直接调用云端转码或本地播放器** |
+| **MP4 (H.264 + AAC)** | Native HW | Native HW | Native HW | Native HW | **Direct Artplayer streaming**, full HTTP 206 seeking |
+| **WebM (VP9 + Opus)** | Native HW | Partial (Safari 14.1+) | Native HW | Native HW | **Direct Artplayer streaming** |
+| **MKV (AVC / H.264 + AAC)** | Native HW | ❌ Unsupported | Native HW | ❌ Variable | Safari **auto-routes to Google Cloud Preview**; Chrome streams natively |
+| **MKV (HEVC / H.265 10-bit)**| Depends on OS codec | ❌ Unsupported | Depends on OS | Depends on chip | If hardware acceleration is missing, **watchdog triggers failover within 2.0s** |
+| **MKV (DTS / TrueHD / AC-3)**| ❌ Video only (no audio) | ❌ Unsupported | ❌ No license | ❌ No license | **Pre-flight catches codec, immediately routing to Cloud Preview** |
+| **AVI / WMV / RMVB / ISO** | ❌ Unsupported | ❌ Unsupported | ❌ Unsupported | ❌ Unsupported | **Pre-flight intercepts, routing to Cloud Preview or local players** |
 
 ---
 
-## 5. 质量验证与开发者调试指南
+## 5. Quality Assurance & Developer Debugging Guide
 
-### 5.1 自动化质量检查 (CI-Check)
+### 5.1 Automated Quality Check (`scripts/ci-check.js`)
 
-在提交代码或合并发布前，运行静态语法与契约校验：
+Run static syntax and contract validations locally before committing:
 
 ```bash
 node scripts/ci-check.js
 ```
 
-**预期输出验证**：
+**Expected Output Verification**:
 ```text
-🚀 [CI-Check] 开始执行全栈工程交付 CI/CD 自动化质量闸门检查...
+🚀 [CI-Check] Starting automated CI/CD quality gate inspection...
 
-🔍 [步骤 1/7] 执行 JavaScript 语法与 AST 原生解析校验...
-✅ 已通过 11 个 JavaScript 文件的 AST 语法完整性验证 (0 错误)。
+🔍 [Step 1/7] Running JavaScript syntax and AST validation...
+✅ Passed AST validation across 11 JavaScript files (0 errors).
 
-🔍 [步骤 2/7] 验证 public 静态资源完整性与 _routes.json 边缘路由隔离...
-✅ 静态文件有效: \public\index.html
-✅ 静态文件有效: \public\css\style.css
-✅ 静态文件有效: \public\js\app.js
-✅ 静态文件有效: \public\favicon.svg
-✅ 静态文件有效: \public\_routes.json
-✅ 静态文件有效: \public\_headers
-✅ _routes.json 边缘路由隔离规则符合标准 (静态资源直通 CDN，计算与静态物理隔离)。
+🔍 [Step 2/7] Checking public assets and _routes.json routing isolation...
+✅ Static assets verified: index.html, style.css, app.js, favicon.svg, _routes.json, _headers
+✅ _routes.json isolation contract satisfied.
 
-🔍 [步骤 3/7] 验证 wrangler.toml 部署配置合规性...
-✅ wrangler.toml 配置合规 (pages_build_output_dir = "public")。
+🔍 [Step 3/7] Validating wrangler.toml configuration...
+✅ Output directory conforms to pages_build_output_dir = "public".
 
-🔍 [步骤 4/7] 校验流媒体 API 路由契约与 MKV/MP4 Range 分片穿透支持...
-✅ 流媒体服务契约全部合规 (支持 MKV MIME 规范化、HTTP 206 Range 分片与 CORS 标头暴露)。
+🔍 [Step 4/7] Checking media streaming routes and Range passthrough...
+✅ Media streaming contract passed (MIME normalization, HTTP 206, CORS headers).
 
-🔍 [步骤 5/7] 校验【需求 2】Google 预览零遮挡安全沙箱模型与防弹窗门禁...
-✅ 零遮挡反退化门禁通过：已彻底移除右上角及全域遮罩拦截层，视频视窗 100% 纯净无遮挡。
-✅ Google 预览原生沙箱合规：sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" (成功阻断 allow-popups 与 top-navigation)。
+🔍 [Step 5/7] Verifying zero-occlusion viewport and anti-popup security model...
+✅ Zero-occlusion verified: No overlay mask divs found in markup.
+✅ Google Preview media channel verified: Unrestricted native iframe engine restored.
 
-🔍 [步骤 6/7] 校验【需求 1】客户端双阶自适应降级播放与智能选源契约...
-✅ 阶段一静态先验探测契约就绪：覆盖 MKV 容器、Safari/WebKit 兼容性与 HEVC/多声道音频。
-✅ 阶段二动态看门狗与智能自动降级契约就绪：起播黑屏/卡死自动无感切换至云端转码预览。
+🔍 [Step 6/7] Verifying client adaptive playback fallback and source routing...
+✅ Pre-flight inspection contract verified.
+✅ Dynamic watchdog failover contract verified.
 
-🔍 [步骤 7/7] 校验【需求 3】极简播放器 Header 结构与边缘安全响应头...
-✅ 播放器顶部 Header 核心四项控件完整齐备 (文件名 / 本地播放器 / 最大化 / 关闭)。
-✅ 播放器顶部 Header 视觉精简验证通过：无多余静态徽章与堆叠按钮，界面极简纯净。
-✅ 边缘响应头安全合规：CSP 明确放行 drive.google.com，且配置严格 MIME 防嗅探与 CORS 标头。
+🔍 [Step 7/7] Verifying minimalist 4-in-1 player header and security headers...
+✅ 4-in-1 header controls verified (filename, external player, maximize, close).
+✅ Header aesthetic verification passed: Zero extraneous badges or stacked buttons.
+✅ Edge security headers verified: CSP whitelists drive.google.com and sets nosniff.
 
-🎉 [CI-Check 质量闸门] 全部 7 个自动化阶段静态检查与安全门禁均 100% 通过！
+🎉 [CI-Check Quality Gate] All 7 automated stages passed successfully!
 ```
 
-### 5.2 浏览器端功能人工核验步骤 (Manual Verification Steps)
+### 5.2 Manual Browser Verification Steps
 
-1. **自动降级验证**：
-   - 准备一个 `.avi` 或带 `DTS` 音轨的文件，在网页中点击播放。
-   - **验证点**：控制台不应报错，视窗应直接渲染 `google-preview-container` 并开始缓冲播放，不应出现原画播放器黑屏或黄色手动警告条。
-2. **右上角零遮挡与弹窗拦截验证**：
-   - 切换至 Google 预览模式。
-   - **验证点**：使用 Chrome DevTools 审查元素，确认 `#google-preview-container` 内没有任何透明遮罩 `div`；点击 Google 播放器画面右上角区域，鼠标样式自然，且不会在浏览器新标签页弹出 Google Drive 界面。
-3. **极简 Header 验证**：
-   - 检查播放器顶部栏。
-   - **验证点**：仅出现文件名、本地播放器按钮、最大化按钮、关闭按钮 4 项；长文件名应展示省略号且点击可全选；点击本地播放器下拉展示 6 种播放器及命令。
+1. **Automatic Failover Verification**:
+   - Open an `.avi` file or a video with a `DTS` audio track.
+   - **Verification**: The console should not log fatal unhandled errors; the player automatically renders `google-preview-container` and buffers the transcoded stream without showing manual error alerts.
+2. **Zero-Occlusion & Pop-Out Verification**:
+   - Switch to Google Preview mode.
+   - **Verification**: In Chrome DevTools, inspect `#google-preview-container` to confirm no overlay mask `div` exists. Click near the top-right area of the video canvas; the cursor behaves naturally and does not open a new Google Drive tab.
+3. **Minimalist Header Verification**:
+   - Inspect the player top bar.
+   - **Verification**: Confirm exactly 4 elements: filename, external player button, maximize button, close button. Long filenames truncate with ellipsis, and clicking selects the text.
