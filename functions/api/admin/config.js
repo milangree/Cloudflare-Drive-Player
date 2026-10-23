@@ -54,7 +54,8 @@ export async function onRequest(context) {
       let newToken = null;
       if (updateData.adminPassword) {
         const { generateToken } = await import("../../utils/configManager.js");
-        newToken = await generateToken({ role: "admin" }, updateData.adminPassword);
+        const signingSecret = env && env.JWT_SECRET ? updateData.adminPassword + env.JWT_SECRET : updateData.adminPassword;
+        newToken = await generateToken({ role: "admin" }, signingSecret);
       }
 
       return new Response(JSON.stringify({ success: true, persisted: res.persisted, newToken }), {

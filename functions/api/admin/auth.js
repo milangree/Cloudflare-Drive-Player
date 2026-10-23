@@ -21,7 +21,8 @@ export async function onRequestPost(context) {
       }
 
       if (inputPass && inputPass === targetPass) {
-        const token = await generateToken({ role: "viewer" }, targetPass);
+        const signingSecret = env && env.JWT_SECRET ? targetPass + env.JWT_SECRET : targetPass;
+        const token = await generateToken({ role: "viewer" }, signingSecret);
         return new Response(
           JSON.stringify({
             success: true,
@@ -45,7 +46,8 @@ export async function onRequestPost(context) {
       const inputAdminPass = (password || "").trim();
       const adminPass = (config.adminPassword || "admin").trim();
       if (inputAdminPass && inputAdminPass === adminPass) {
-        const token = await generateToken({ role: "admin" }, adminPass);
+        const signingSecret = env && env.JWT_SECRET ? adminPass + env.JWT_SECRET : adminPass;
+        const token = await generateToken({ role: "admin" }, signingSecret);
         return new Response(
           JSON.stringify({
             success: true,

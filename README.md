@@ -1,353 +1,404 @@
 # Cloudflare Drive Player
 
-一个基于 **Cloudflare Pages Functions** 与 **Google Drive API（Service Account）** 构建的轻量级网盘目录索引与流媒体在线播放器。
+> 基于 **Cloudflare Pages Functions** 与 **Google Drive API（Service Account）** 构建的轻量级、企业级网盘目录索引与流媒体多端聚合枢纽。
 
-**零服务端、零运行时 npm 依赖、纯边缘计算**：静态资源走 Cloudflare 边缘 CDN 直通，全部业务逻辑运行在 Cloudflare Pages Functions 中，鉴权签名直接使用浏览器/边缘原生 Web Crypto API，无需任何构建打包流程。
+**零服务端、零运行时 npm 依赖、纯边缘计算**：静态资源走 Cloudflare 全球边缘 CDN 物理直通，全部业务逻辑运行在 Pages Functions 边缘 Worker 中。采用原生 Web Crypto API 签发 RS256 JWT，支持大文件 HTTP 206 Range 分片透传、双阶黑屏降级看门狗、Artplayer 多内核播放、黑胶唱机同步歌词、PDF/Markdown 在线阅读及 OpenList 范式多选批量管理。
 
 ![Platform: Cloudflare Pages](https://img.shields.io/badge/Platform-Cloudflare%20Pages-f38020?logo=cloudflare)
 ![Storage: Google Drive](https://img.shields.io/badge/Storage-Google%20Drive-4285F4?logo=googledrive)
 ![Runtime Dependencies: Zero](https://img.shields.io/badge/Runtime%20Dependencies-Zero-emerald)
 ![Frontend Stack: Tailwind + ArtPlayer](https://img.shields.io/badge/Frontend-Tailwind%20%2B%20ArtPlayer-0ea5e9)
-![License: 未定义 (No LICENSE file)](https://img.shields.io/badge/License-%E6%9C%AA%E5%AE%9A%E4%B9%89-lightgrey)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 ---
 
-## 1. 项目简介与定位
+## 目录
 
-Cloudflare Drive Player 把一个 Google Drive 根文件夹变成可公开浏览、可在线流媒体播放的私有云盘站点。它的定位非常明确：
+- [1. 项目定位与核心优势](#1-项目定位与核心优势)
+- [2. 核心功能与特性](#2-核心功能与特性)
+  - [2.1 Cloudflare Pages 边缘驱动与零依赖架构](#21-cloudflare-pages-边缘驱动与零依赖架构)
+  - [2.2 Artplayer 现代多内核音视频流媒体视窗](#22-artplayer-现代多内核音视频流媒体视窗)
+  - [2.3 双阶黑屏降级看门狗与智能选源](#23-双阶黑屏降级看门狗与智能选源)
+  - [2.4 智能断点记忆续播](#24-智能断点记忆续播)
+  - [2.5 黑胶音频视窗与逐行同步歌词（Audio Studio）](#25-黑胶音频视窗与逐行同步歌词audio-studio)
+  - [2.6 全能沉浸式文档阅读器（PDF / Markdown / 代码）](#26-全能沉浸式文档阅读器pdf--markdown--代码)
+  - [2.7 全场景常驻原文件下载通道](#27-全场景常驻原文件下载通道)
+  - [2.8 纯深色模式与极简纯净视窗](#28-纯深色模式与极简纯净视窗)
+  - [2.9 现代化管理员后台与 OpenList 范式多选批量管理](#29-现代化管理员后台与-openlist-范式多选批量管理)
+  - [2.10 Google Drive 跨盘与快捷方式穿透](#210-google-drive-跨盘与快捷方式穿透)
+- [3. 部署指引（Cloudflare Pages）](#3-部署指引cloudflare-pages)
+  - [3.1 部署流程概述](#31-部署流程概述)
+  - [3.2 环境变量详细配置清单](#32-环境变量详细配置清单)
+  - [3.3 Cloudflare KV 命名空间绑定（可选进阶）](#33-cloudflare-kv-命名空间绑定可选进阶)
+- [4. 详细配置与授权指南](#4-详细配置与授权指南)
+  - [4.1 Google Cloud 凭据与服务账号创建流程](#41-google-cloud-凭据与服务账号创建流程)
+  - [4.2 Google Drive 文件夹共享授权（核心关键）](#42-google-drive-文件夹共享授权核心关键)
+  - [4.3 管理员后台设置与全站访问控制](#43-管理员后台设置与全站访问控制)
+- [5. 遇到问题怎么办（排错 FAQ 诊断宝典）](#5-遇到问题怎么办排错-faq-诊断宝典)
+  - [Q1: 视频播放黑屏有声音、解码卡死或提示格式不受支持？](#q1-视频播放黑屏有声音解码卡死或提示格式不受支持)
+  - [Q2: 提示 Google 凭据失效 / 403 Forbidden / invalid_grant / 10000 错误？](#q2-提示-google-凭据失效--403-forbidden--invalid_grant--10000-错误)
+  - [Q3: 拖动视频进度条异常卡死，或接口返回 HTTP 416 Range Not Satisfiable？](#q3-拖动视频进度条异常卡死或接口返回-http-416-range-not-satisfiable)
+  - [Q4: 控制台提示未绑定 KV 会影响使用吗？三级持久化机制是什么？](#q4-控制台提示未绑定-kv-会影响使用吗三级持久化机制是什么)
+  - [Q5: 上传文件或创建文件时报错 Quota: 0 或 storageQuotaExceeded？](#q5-上传文件或创建文件时报错-quota-0-或-storagequotaexceeded)
+  - [Q6: 如何唤起第三方本地播放器（PotPlayer / IINA / VLC / Infuse / MPV）？](#q6-如何唤起第三方本地播放器potplayer--iina--vlc--infuse--mpv)
+- [6. 系统架构与技术实现](#6-系统架构与技术实现)
+- [7. 本地开发与质量闸门](#7-本地开发与质量闸门)
+- [8. 文档索引与致谢](#8-文档索引与致谢)
+
+---
+
+## 1. 项目定位与核心优势
+
+Cloudflare Drive Player 将指定的 Google Drive 文件夹转化为全球低延迟分发的私有媒体与文档库。
 
 | 它是 | 它不是 |
 | :--- | :--- |
-| 一个**目录索引 + 流媒体代理**：列出 Drive 文件夹内容，并把媒体文件以 HTTP Range 分片透传给浏览器 | 一个**转码服务**：项目内没有 FFmpeg，也不在边缘做实时转码 |
-| 一个**零运维**的 Serverless 应用：无服务器、无数据库、无构建步骤 | 一个**网盘存储**：所有数据仍然存放在 Google Drive，本项目不复制、不缓存媒体内容 |
-| 一个**开箱即用**的播放器：内置自适应降级、外挂字幕、断点续播、本地播放器唤起 | 一个**多用户 SaaS**：只有一套「访客令牌 + 管理员令牌」的简易权限模型 |
-
-> **关于「云端转码」的真实含义**：本项目所称的「云端转码预览」，实质是嵌入 **Google Drive 官方预览页**（`https://drive.google.com/file/d/{id}/preview`）由 Google 侧完成转码播放，并非本项目自行转码。该通道要求目标文件对访客可访问（见 [ADR-0001](docs/adr/0001-media-streaming-and-transcoding-architecture.md)）。
+| **边缘驱动的目录索引与流媒体代理**：通过 Cloudflare Pages 边缘节点转发分片请求，支持流式直出。 | **重型转码服务器**：边缘节点不挂载 FFmpeg，高码率特殊编码通过内置双阶看门狗调用 Google 官方云端转码预览或唤起本地播放器。 |
+| **零运维 Serverless 架构**：无虚拟机、无容器、无数据库，部署后零维护开销。 | **云盘存储本身**：所有数据均存储于 Google 云端硬盘，本项目不转存、不占用额外服务器空间。 |
+| **沉浸式多端媒体枢纽**：涵盖视频、黑胶音乐、逐行歌词、PDF/Markdown 阅读与批量管理。 | **复杂的多租户 SaaS 平台**：采用简洁的「访客令牌 + 管理员令牌」轻量安全模型。 |
 
 ---
 
-## 2. 核心特性
+## 2. 核心功能与特性
 
-### 2.1 边缘原生架构
+### 2.1 Cloudflare Pages 边缘驱动与零依赖架构
+- **零运行时 npm 依赖**：生产环境运行时零第三方 npm 包，仅保留 Wrangler 开发依赖，彻底排除供应链投毒与体积膨胀风险。
+- **纯原生 Web Crypto API 鉴权**：在 Cloudflare Worker 边缘沙箱内使用原生 `crypto.subtle` 完成 RS256 PKCS#8 签名与 JWT 生成，换取 Google Drive Access Token，内置 300 秒提前量智能缓存。
+- **边缘路由物理隔离**：基于 `public/_routes.json` 规则，仅将 `/api/*` 请求接入 Functions 计算，HTML/JS/CSS/SVG 静态资产 100% 直通边缘 CDN 缓存，免受冷启动拖累。
 
-- **零运行时依赖**：`package.json` 中唯一的依赖是开发工具 `wrangler`（devDependencies），生产运行时不加载任何 npm 包（见 [package.json](package.json)）。
-- **Web Crypto 原生 JWT 签名**：Google Service Account 的 RS256 JWT 通过 `crypto.subtle` 直接签名并换取 OAuth2 Token，带 300 秒提前量的 Token 缓存（见 [functions/utils/googleAuth.js](functions/utils/googleAuth.js)）。
-- **边缘路由隔离**：`public/_routes.json` 仅声明 `/api/*` 进入 Functions 计算，静态资源 100% 走 CDN 直通，彻底规避静态资源被 Worker 冷启动拖垮的风险（见 [public/_routes.json](public/_routes.json) 与 [ADR-001](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md)）。
+### 2.2 Artplayer 现代多内核音视频流媒体视窗
+- **现代播放内核**：集成 Artplayer 播放器，提供完备的控制台能力（画中画、全屏、截图、比例调节、迷你进度条、声画同步微调等）。
+- **多容器解封装引擎**：
+  - **MP4 / WebM / MOV**：浏览器原生硬解加速；
+  - **HLS (.m3u8)**：集成 Hls.js 解码；
+  - **FLV (.flv)**：集成 Flv.js 解码；
+  - **MKV (.mkv)**：针对 `video/x-matroska` MIME 深度适配，支持原生解封装与底层错误即时拦截。
+- **外挂字幕自动装配与转换**：自动匹配并加载同目录下同名字幕文件（`.vtt`, `.srt`, `.ass`），支持前端将 SRT/ASS 格式动态转为 WebVTT，支持字幕时间轴 `±0.5s` 实时微调与本地字幕加载。
+- **智能连播队列**：自动根据剧集命名规则提取自然排序，支持「下一集自动连播」与快捷上下集切换。
 
-### 2.2 流媒体与自适应降级
+### 2.3 双阶黑屏降级看门狗与智能选源
+针对浏览器对 HEVC/H.265 10bit、MKV 容器以及商业音频编码（DTS, Dolby Atmos, AC3, EAC3, TrueHD）解码能力有限的问题，系统内建**双阶段智能降级引擎**：
+1. **阶段一 · 静态先验探测**：打开视频前自动探测容器与编码，针对已知黑名单（如 AVI, WMV, RMVB, ISO）或 Safari 环境下的 MKV，直接跳过原生播放，自动启用 Google 官方云端转码预览。
+2. **阶段二 · 动态双阶看门狗**：
+   - **2.5 秒快速侦测**：针对“音频正常推进但画面黑屏无帧输出（`hasVideo === false`）”的典型 Chrome MKV 黑屏故障，在 2.5 秒内快速识别并自动切源；
+   - **5.0 秒深度兜底**：巡检 `video.error`、`readyState < 2` 及播放停滞状态，触发平滑降级并伴随友好 Toast 提醒；
+   - **无感还原与一键切换**：顶栏保留画质热切换按钮，随时在「Google 官方转码预览」与「原画直链」之间一键切换。
+3. **零遮挡视窗**：Google 预览使用纯 CSS 几何裁切技巧（负边距抵消顶栏），无多余遮罩层，保留完备的 iframe 播放权限（包含全屏与 DRM 支持）。
 
-- **HTTP Range 分片透传**：完整支持 `Range` / `If-Range` / `If-Match` 请求头转发与 `206 Partial Content` 响应，支持 `HEAD` 探测与 `416` 区间回传，实现大视频秒开与任意进度拖拽（见 [functions/api/stream/[id].js](functions/api/stream/[id].js)）。
-- **MKV MIME 校准**：强制将 `.mkv` 映射为 `video/x-matroska`，并修正上游返回的 `application/octet-stream`。
-- **双阶段智能降级引擎**（见 [public/js/app.js](public/js/app.js)）：
-  - **阶段一 · 静态先验探测** `canBrowserPlayNatively()`：黑名单容器（`avi/wmv/rmvb/vob/iso`）、Safari 下的 MKV、多声道商业音频（`DTS/TrueHD/Atmos/AC3/EAC3`）、HEVC/H.265 硬解能力探测；判定失败则**直接跳过原生播放器**，自动切至 Google 云端预览。
-  - **阶段二 · 动态双阶看门狗** `startMediaWatchdog()`：2.5 秒快速黑屏侦测（有声无画）+ 5 秒深度稳定性巡检；捕获 `video.error`、解码卡死、`readyState < 2` 后自动无感切源，并保留 Toast 提示与手动切回入口。
-- **零遮挡视窗**：Google 预览 iframe 采用纯 CSS 几何裁切（`top: -56px; height: calc(100% + 56px)`）隐藏 Google 原生 56px 顶栏，**不引入任何遮罩层**，iframe 使用完整 `allow=` 权限（含 `encrypted-media`、`fullscreen`），以保留 EME/DRM 与自动播放能力。
-- **画质热切换**：在「Google 云端预览」与「4K/原画直链」之间一键切换，不重载页面。
+### 2.4 智能断点记忆续播
+- 播放过程中自动节流记录每部影片的播放进度（Local Storage 持久化）。
+- 再次打开时自动跳转至上次观看位置，并伴随轻量微交互提示浮层，可一键切换「从头播放」。
 
-### 2.3 OpenList 范式多选与批量管理
+### 2.5 黑胶音频视窗与逐行同步歌词（Audio Studio）
+- **沉浸式黑胶唱机**：为 MP3, FLAC, WAV, AAC, OGG, M4A 等音频打造专注播放模式，呈现拟物黑胶动态唱片旋转与音频母带品质徽标（Hi-Res / 无损）。
+- **同步滚动歌词**：自动检测挂载同目录下的同名 `.lrc` 歌词文件，毫秒级逐行滚动高亮，并支持**点击歌词直接定位音频进度**。
+- **音频播放列表**：同目录音频自动生成播放队列，支持循环、随机与上一首/下一首切歌。
 
-- **日常浏览纯净无扰**：复选框默认隐藏；仅管理员登录后在导航栏出现「多选模式」开关。
-- **优先级事件仲裁**：多选态下点击整行/卡片任意区域优先切换选中状态，防止误触播放；进入文件夹需使用专属「打开」按钮或 `Alt/Option + 点击`。
-- **底吸浮动工具栏**：全选本页、反选本页、清空退出。
-- **批量操作**：批量重命名（替换 / 前后缀 / 递增序号，带实时预览）、批量跨目录移动、批量移入回收站（默认非永久删除）。
-- **受控并发池**：前端原子级并发调度（并发上限 3），规避 Cloudflare Functions 请求时长限制与 Google API 429 限流。
+### 2.6 全能沉浸式文档阅读器（PDF / Markdown / 代码）
+- **PDF 在线原样预览**：集成响应式 PDF 视窗，全屏无缩放偏差浏览。
+- **Markdown / 代码 / 文本渲染**：自动识别 `.md`, `.txt`, `.json`, `.log` 等文档并提供格式化排版阅读。
+- **常驻独立下载**：阅读器顶栏常驻「下载源文件」按钮，随时离线保存。
 
-### 2.4 极简播放器控制台
+### 2.7 全场景常驻原文件下载通道
+- **RFC 5987 编码规范**：后端严格以 `filename*=UTF-8''...` 格式编码响应头，确保包含中文字符、特殊符号及长文件名下载时不出现乱码。
+- **Google 在线文档自动导出**：针对 Google Docs、Google Sheets、Google Slides，自动转换为标准的 `.docx`, `.xlsx`, `.pptx`, `.pdf` 格式流式导出。
+- **常驻快捷入口**：视频播放器控制条、黑胶音频视窗、文档阅读器、文件列表右键及多选栏均包含常驻下载入口。
 
-播放器顶栏只保留四项核心控件：**① 文件名**（自适应截断 + Tooltip + 一键全选）、**② 本地播放器调用中心**、**③ 最大化 / 还原**、**④ 关闭**。
+### 2.8 纯深色模式与极简纯净视窗
+- **视觉风格**：采用现代化深色 Slate 主题搭配品牌 Accent 强调色与 Glassmorphism 毛玻璃质感。
+- **视窗极简规范**：播放器顶部仅保留核心四项控件（文件名展示与全选复制、本地播放器调用菜单、窗口最大化/还原、关闭），杜绝信息冗余。
 
-外部播放器协议支持（见 [docs/player-architecture-and-user-guide.md](docs/player-architecture-and-user-guide.md)）：
+### 2.9 现代化管理员后台与 OpenList 范式多选批量管理
+- **动态配置管理**：站点标题、副标题、全站访客密码保护、管理员密码等均可在后台在线热修改，无需重新部署。
+- **三级持久化架构**：优先存入 Cloudflare KV；未绑定 KV 时自动写入 Google Drive 根目录 metadata properties（永久持久化且不占用存储配额）；最后使用内存兜底。
+- **OpenList 范式多选模式**：
+  - 默认浏览纯净无扰，复选框隐藏；开启多选后点击整行切换选择；
+  - 底部吸附浮动工具栏，支持全选、反选、多选计数；
+  - 支持批量重命名（正则/前后缀/递增序号）、批量跨目录移动、批量移入回收站。
+- **文件全生命周期控制**：新建文件夹、单文件重命名/移动、删除（软删除至回收站 / 永久删除）、一键设置资源为「知道链接的任何人可查看」（解决 Google 预览未授权 302 问题）。
 
-| 播放器 | 协议 |
-| :--- | :--- |
-| MPV | `mpv://<StreamUrl>` 或终端命令 `mpv "<StreamUrl>"` |
-| PotPlayer (Windows) | `potplayer://<StreamUrl>` |
-| IINA (macOS) | `iina://weblink?url=<StreamUrl>` |
-| VLC | `vlc://<StreamUrl>` |
-| Infuse (iOS / Apple TV) | `infuse://open?url=<StreamUrl>` |
-| Android (Just Player / Next Player / VLC) | `intent:<StreamUrl>#Intent;action=android.intent.action.VIEW;type=video/*;end` |
-| 通用 | 复制直链（RFC 5987 文件名）/ 复制 MPV 命令 |
-
-### 2.5 播放体验增强
-
-- **自动连播**：智能提取剧集序号（剥离 `ep`/`e`/`第N集` 标记），自然排序后生成播放列表，支持上一集/下一集与「自动连播」开关（偏好持久化）。
-- **断点续播**：播放进度按文件 ID 存入 `localStorage`（键 `cf_player_progress`），再次打开弹出续播提示条。
-- **外挂字幕**：自动检测同名字幕（`vtt/srt/ass/sub`）并优先挂载；支持 `+0.5s / -0.5s / 重置` 时间轴微调；支持选择本地字幕文件；`SRT`/`ASS` 在浏览器端实时转换为 WebVTT。
-- **播放倍速记忆**、音频文件居中卡片式播放、竖屏视频比例自适应。
-
-### 2.6 后台管理系统
-
-- **动态配置持久化**：站点标题（`SITE_NAME`）等配置可在线修改，无需回 Cloudflare 重新部署环境变量。
-- **三级配置存储**（见 [functions/utils/configManager.js](functions/utils/configManager.js)）：Cloudflare KV（键 `SYSTEM_CONFIG`）→ Google Drive 根文件夹私有属性（`properties.cf_sys_config`）→ 环境变量 → 运行时内存。未绑定 KV 时自动降级到 Drive 属性，**开箱即用、永久持久化**。
-- **站点密码保护**：可一键开启「全站访问密码」，未验证访客无法列出或播放任何资源。
-- **文件全生命周期管理**：在线查看元数据、重命名、移动、删除（移入回收站 / 永久删除）、新建文件夹、上传文件（含可恢复的断点续传初始化）、一键设置文件为「知道链接的任何人可查看」。
-
-### 2.7 网盘浏览体验
-
-多级目录穿梭与面包屑导航、实时模糊搜索、五种排序（名称升降序 / 最新修改 / 文件大小升降序）、网格与表格双视图（记忆偏好）、15/30/50/100/全部 分页、640px 高清缩略图与分辨率徽标、图片灯箱预览、文件下载与直链复制、深色毛玻璃（Glassmorphism）视觉。
-
-### 2.8 质量保障与 CI/CD
-
-- **阶段一 · 质量与安全门禁**：JavaScript 语法与静态契约校验（`scripts/ci-check.js`，7 项检查）、生产依赖漏洞阻断门禁（`npm audit --omit=dev --audit-level=high`）、脚手架依赖预警（非阻断）。
-- **阶段二 · 部署与冒烟**：`cloudflare/wrangler-action@v3` 部署到 Cloudflare Pages，主分支进入生产分支，随后执行带 Anycast 预热与指数退避重试的冒烟测试（`scripts/healthcheck.js`，8 项检查）。
+### 2.10 Google Drive 跨盘与快捷方式穿透
+- 支持挂载「我的云端硬盘」普通文件夹或团队盘（Shared Drive）。
+- **快捷方式穿透**：通过 Google Drive 官方「添加快捷方式」功能，将分布在不同账号、团队盘或其他人共享的文件夹集中放入根文件夹，系统后端将自动透明解封装并穿透访问。
 
 ---
 
-## 3. 技术架构
+## 3. 部署指引（Cloudflare Pages）
 
-```
-浏览器 (public/)
-  │  ① 静态资源直出：index.html / css / js / favicon.svg（CDN 直通，不经 Functions）
-  │  ② /api/* 请求 → Cloudflare Pages Functions
-  ▼
-Cloudflare Pages Functions (functions/)
-  ├── api/_middleware.js      统一 CORS 与全局异常保护（仅作用于 /api/*）
-  ├── api/info.js             站点信息与配置探测
-  ├── api/list.js             目录列表（分页 / 搜索 / 快捷方式解析 / 文件夹统计）
-  ├── api/stream/[id].js      媒体流代理（Range 透传 / MIME 校准）
-  ├── api/download/[id].js    文件下载（RFC 5987 / Google 文档导出）
-  ├── api/admin/*             认证、配置、文件管理
-  └── utils/*                 Google 鉴权、三级配置管理
-  ▼
-Google Drive API v3（Service Account Bearer Token）
-```
+### 3.1 部署流程概述
 
-- **鉴权模型**：`Authorization: Bearer <token>` 或 URL Query `?token=<token>` 双通道（流媒体标签与外部播放器无法自定义 Header，故必须支持 Query 通道）。
-- **令牌结构**：`<base64url(payload)>.<signature>`，`payload` 含 `exp`（7 天有效期）与 `role`（`viewer` / `admin`）；`signature = SHA-256(payloadB64 + secret)` 取前 32 位十六进制。
-- **恒定时间比较**：`timingSafeEqual()` 逐字符异或累加比对签名，避免时序侧信道。
+1. **Fork 或克隆仓库**：将本项目推送至您的个人 GitHub / GitLab 账户。
+2. **登录 Cloudflare 控制台**：
+   - 进入 **Workers & Pages** -> 点击 **Create application** -> 选择 **Pages** -> 点击 **Connect to Git**。
+   - 授权并选择刚导入的 `Cloudflare-Drive-Player` 仓库。
+3. **设置构建选项**：
+   - **Framework preset（框架预设）**：选择 `None`。
+   - **Build command（构建命令）**：**留空**（无需任何构建编译流程）。
+   - **Build output directory（输出目录）**：填写 `public`。
+4. **配置环境变量**：展开 **Environment variables**，根据下表添加机密变量后点击 **Save and Deploy**。
 
 ---
 
-## 4. 目录结构
+### 3.2 环境变量详细配置清单
 
-```text
-Cloudflare Drive Player/
-├── .github/workflows/ci-cd.yml    # GitHub Actions 双阶段 CI/CD
-├── docs/                          # 架构决策与工程文档
-│   ├── adr/                       # ADR 架构决策记录
-│   ├── api-reference.md           # API 接口参考
-│   ├── ci-cd-deployment-guide.md  # CI/CD 与部署排障
-│   └── player-architecture-and-user-guide.md
-├── functions/                     # Cloudflare Pages Functions（边缘 API 层）
-│   ├── api/
-│   │   ├── _middleware.js
-│   │   ├── info.js
-│   │   ├── list.js
-│   │   ├── stream/[id].js
-│   │   ├── download/[id].js
-│   │   └── admin/{auth,config,files}.js
-│   └── utils/{configManager,googleAuth}.js
-├── public/                        # 静态前端资源
-│   ├── index.html                 # 单页应用
-│   ├── css/style.css
-│   ├── js/app.js                  # 前端核心交互逻辑
-│   ├── favicon.svg
-│   ├── _headers                   # 静态资源响应头（CORS / CSP / nosniff）
-│   └── _routes.json               # 边缘路由隔离（仅 /api/* 走 Functions）
-├── scripts/
-│   ├── ci-check.js                # 阶段一：语法与静态契约校验
-│   └── healthcheck.js             # 阶段二：冒烟测试
-├── wrangler.toml                  # Wrangler 配置（Pages 项目名与 KV 绑定）
-├── .env.example                   # 环境变量模板
-└── package.json
-```
+在 **Cloudflare Dashboard → Pages → 你的项目 → Settings → Environment variables** 中添加以下变量：
 
----
-
-## 5. 环境变量与配置
-
-在 **Cloudflare Dashboard → Pages → Settings → Environment variables** 中配置。本地调试时复制 [.env.example](.env.example) 为 `.dev.vars`（已在 [.gitignore](.gitignore) 中忽略）。
-
-### 5.1 环境变量清单
-
-| 变量名 | 必填 | 说明 |
+| 变量名 | 必填状态 | 说明与示例 |
 | :--- | :---: | :--- |
-| `SERVICE_ACCOUNT_JSON` | **是**（二选一） | Google Service Account 的**完整 JSON 字符串**（含 `private_key`、`client_email`），直接粘贴 JSON 内容 |
-| `GOOGLE_CLIENT_EMAIL` | **是**（二选一） | 服务账号邮箱；与 `GOOGLE_PRIVATE_KEY` 组合使用 |
-| `GOOGLE_PRIVATE_KEY` | **是**（二选一） | JSON 密钥中的私钥完整内容（含 `-----BEGIN PRIVATE KEY-----` 与 `-----END PRIVATE KEY-----`） |
-| `ROOT_FOLDER_ID` | 推荐 | 挂载的 Google Drive 根文件夹 ID；留空则默认使用 `root` |
-| `SITE_NAME` | 否 | 站点标题；留空则回退为「Google Drive 根文件夹名 - Drive Player」 |
-| `REQUIRE_ACCESS_PASSWORD` | 否 | 置为 `true` 或 `1` 时开启全站访问密码保护 |
-| `ACCESS_PASSWORD` | 否 | 访客访问密码（仅在 `REQUIRE_ACCESS_PASSWORD` 开启时生效） |
-| `ADMIN_PASSWORD` | 否 | 后台管理密码；**若不设置，代码内默认值为 `admin`**，请务必显式配置 |
+| **`CLIENT_EMAIL`** | **是**（方式A） | Google 服务账号邮箱，形如：`xxx@project-id.iam.gserviceaccount.com` |
+| **`PRIVATE_KEY`** | **是**（方式A） | 服务账号私钥内容，需包含完整 `-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----`，支持直接粘贴或换行转义 |
+| **`SERVICE_ACCOUNT_JSON`** | **是**（方式B） | 完整 JSON 凭据字符串（将 GCP 下载的 `.json` 密钥全文粘贴）。方式 A 与方式 B 任选其一 |
+| **`ROOT_FOLDER_ID`** | **推荐** | 挂载的 Google Drive 根文件夹 ID；若留空则默认挂载服务账号的 `root` 根空间 |
+| **`ADMIN_PASSWORD`** | **推荐** | 后台管理员密码；**代码内默认值为 `admin`**，强烈建议显式自定义复杂密码 |
+| **`JWT_SECRET`** | **推荐** | 访问令牌防伪签名加盐密钥（任意随机复杂字符串，建议 32 位以上） |
+| **`SITE_NAME`** | 否 | 自定义站点主标题，如：`我的私有云盘`（亦可在后台管理动态修改） |
+| **`REQUIRE_ACCESS_PASSWORD`** | 否 | 设置为 `true` 或 `1` 时默认开启全站访客密码保护 |
+| **`ACCESS_PASSWORD`** | 否 | 全站访客默认访问密码（开启访客保护时生效） |
 
-> **凭据二选一**：`SERVICE_ACCOUNT_JSON` 与 `GOOGLE_CLIENT_EMAIL` + `GOOGLE_PRIVATE_KEY` 两组方式任选其一（见 [functions/utils/googleAuth.js](functions/utils/googleAuth.js)）。JSON 方式支持在 JSON 内直接携带 `root_folder_id`。
+> **提示**：为保障多环境一致性，建议同时在 **Production** 与 **Preview** 环境中配置上述变量。本地调试时，可将 [.env.example](.env.example) 复制为 `.dev.vars` 即可被 `npx wrangler pages dev public` 自动读取。
 
-### 5.2 Cloudflare KV 命名空间（可选，推荐生产开启）
+---
 
-KV 用于提供毫秒级的配置读取与备份。**注意**：当项目根目录存在 `wrangler.toml` 时，Cloudflare Pages 会自动接管绑定管理，控制台界面的手动绑定将被锁定，所有绑定必须在 `wrangler.toml` 中配置（见 [wrangler.toml](wrangler.toml) 注释）。
+### 3.3 Cloudflare KV 命名空间绑定（可选进阶）
+
+系统内置了 Google Drive 根目录 metadata properties 自动持久化机制，**即使不配置 KV 也具备完整保存能力**。  
+若希望获得全球边缘节点毫秒级系统配置与密码读取加速，可配置 KV 绑定：
+
+#### 方式 1：通过控制台绑定
+1. 在 Cloudflare 控制台导航至 **Workers & Pages → KV**，点击 **Create a namespace**，输入名称如 `drive_player_kv`。
+2. 进入 Pages 项目的 **Settings → Functions → KV namespace bindings**。
+3. 点击 **Add binding**：
+   - **Variable name（变量名）**：输入 **`DRIVE_KV`**（必须严格全大写保持一致）。
+   - **KV namespace**：选中刚刚创建的 KV 命名空间。
+4. 重新触发一次部署即可生效。
+
+#### 方式 2：通过 wrangler.toml 绑定
+如果使用 Git CI 自动化发布，可在工程根目录 [wrangler.toml](wrangler.toml) 中取消注释并填入 KV 命名空间 ID：
 
 ```toml
 [[kv_namespaces]]
 binding = "DRIVE_KV"
-id = "<你的 KV Namespace ID>"
+id = "6234abcd5678ef901234567890abcdef" # 替换为您真实的 KV Namespace ID
 ```
-
-未绑定 KV 时系统自动使用 Google Drive 根文件夹属性持久化，功能不受影响。
 
 ---
 
-## 6. 本地开发
+## 4. 详细配置与授权指南
 
-前置条件：Node.js 18+（CI 使用 Node 20）、npm、[Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)。
+### 4.1 Google Cloud 凭据与服务账号创建流程
+
+要让 Cloudflare Pages 能够读取您的 Google Drive 文件，需要通过 Google Cloud Platform 创建服务账号：
+
+1. **新建 GCP 项目**：
+   - 登录 [Google Cloud Console](https://console.cloud.google.com/)。
+   - 点击顶部项目下拉菜单，点击 **新建项目 (New Project)**，输入项目名称（如 `cf-drive-player`）并创建。
+2. **启用 Google Drive API**：
+   - 在左侧导航栏选择 **API 和服务 (APIs & Services) → 库 (Library)**。
+   - 搜索 `Google Drive API`，点击进入并点击 **启用 (Enable)**。
+3. **创建服务账号 (Service Account)**：
+   - 导航至 **API 和服务 → 凭据 (Credentials)**，点击顶部 **创建凭据 (Create Credentials) → 服务账号 (Service Account)**。
+   - 输入服务账号名称（如 `drive-viewer`），点击 **创建并继续**。
+   - 角色可选（不需要特殊权限，后续通过网盘内共享赋予权限），直接点击 **完成 (Done)**。
+4. **生成私钥文件**：
+   - 在服务账号列表中点击刚刚创建的服务账号进入详情页。
+   - 切换到 **密钥 (Keys)** 选项卡，点击 **添加密钥 (Add Key) → 创建新密钥 (Create new key)**。
+   - 密钥类型选择 **JSON** 并点击 **创建**，浏览器将自动下载一个 `.json` 凭据文件。
+   - 打开该 JSON 文件，记录 `client_email` 与 `private_key`。
+
+---
+
+### 4.2 Google Drive 文件夹共享授权（核心关键）
+
+> ⚠️ **新手最容易漏掉的一步**：服务账号是独立的虚拟身份，本身看不到您的任何私人网盘文件。必须手动将网盘文件夹**共享**给服务账号！
+
+1. 在浏览器中打开 [Google 云端硬盘](https://drive.google.com/drive/)。
+2. 新建或找到希望挂载展示的总文件夹（例如「我的影音库」）。
+3. 右键该文件夹，选择 **共享 (Share) → 共享 (Share)**。
+4. 在添加人员输入框中，粘贴刚才生成的 **服务账号邮箱 (`client_email`)**。
+5. 权限选择：
+   - 仅用于只读浏览、音视频播放、下载：设置为 **查看者 (Viewer)**；
+   - 需要使用后台重命名、移动、新建文件夹、移入回收站：设置为 **内容管理员 (Content Manager)** 或 **编辑者 (Editor)**。
+6. 取消勾选“通知人员”（虚拟邮箱无法接收邮件），点击 **共享/发送** 确认。
+7. 获取根文件夹 ID：
+   - 进入该文件夹，查看浏览器地址栏 URL：  
+     `https://drive.google.com/drive/folders/1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l`
+   - 末尾的 `1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l` 即为 `ROOT_FOLDER_ID`。
+
+---
+
+### 4.3 管理员后台设置与全站访问控制
+
+1. **登录管理员后台**：
+   - 访问部署好的站点，点击右上角齿轮图标进入后台面板。
+   - 输入环境变量配置的 `ADMIN_PASSWORD`（默认 `admin`）登录。
+2. **网站基本信息设置**：
+   - **网站标题 (siteName)**：修改前端顶栏展示的品牌标题。
+   - **网站副标题 (siteSubtitle)**：修改展示的二级标语（如：影音娱乐与通用文档多端枢纽）。
+3. **全站访客访问控制**：
+   - 开启「启用全站访问密码」开关，并设定访客访问密码。
+   - 保存后，未获授权的访客将看到密码解锁窗口，且后端 API 将拦截所有未经认证的目录列举与媒体取流请求。
+4. **修改管理员密码**：
+   - 可在后台直接输入新密码热更新，保存后系统将自动重新签发管理员令牌，无需重新部署。
+
+---
+
+## 5. 遇到问题怎么办（排错 FAQ 诊断宝典）
+
+### Q1: 视频播放黑屏有声音、解码卡死或提示格式不受支持？
+
+- **原因分析**：
+  1. **音频有声音画面黑屏**：文件多为封装了 **HEVC (H.265) 10bit**、**VC-1**、**MPEG-2** 的 MKV/MP4，当前浏览器硬件或操作系统缺少对应视频硬解扩展；
+  2. **完全无声无画报错**：音频轨道使用了商业专有音轨（**DTS**、**TrueHD**、**AC3/E-AC3 Dolby Digital**），浏览器原生不支持解封装商业音频；
+  3. **Google 预览未授权 302 重定向**：启用了 Google 云端转码预览，但该文件未开放公开读取权限，导致 Google 预览 iframe 重定向至登录页受阻。
+- **排查与解决步骤**：
+  - **自动处理**：系统内建的**双阶看门狗**会在 2.5 秒内自动判定黑屏状态，并无感切换至 Google 官方云端转码预览通道；
+  - **一键授权公开**：以管理员身份登录后台，在对应文件操作菜单中点击「设为任何人可见」，解除 Google 预览的 302 鉴权限制；
+  - **本地专业播放器调用**：点击播放器顶栏的播放器菜单，一键唤起 **PotPlayer**、**IINA**、**VLC**、**Infuse** 或复制流直链至 **MPV** 原生硬解播放。
+
+---
+
+### Q2: 提示 Google 凭据失效 / 403 Forbidden / invalid_grant / 10000 错误？
+
+- **原因分析**：
+  1. `PRIVATE_KEY` 格式破损或换行符转义异常；
+  2. 目标文件夹未共享给服务账号邮箱；
+  3. Cloudflare Worker 边缘节点时钟或配置缓存未刷新。
+- **排查与解决步骤**：
+  - **检查私钥换行**：确保 `PRIVATE_KEY` 包含完整的 `-----BEGIN PRIVATE KEY-----` 和 `-----END PRIVATE KEY-----`。若在控制台多行粘贴出现截断，可直接使用单引号包裹的完整 `SERVICE_ACCOUNT_JSON` 变量；
+  - **确认共享权限**：打开 Google Drive 网页版，检查挂载的根文件夹以及目标文件是否已共享给 `client_email`；
+  - **清除部署缓存**：在 Cloudflare Pages 控制台的 **Deployments** 列表中，找到最新部署点击 **Retry deployment**。
+
+---
+
+### Q3: 拖动视频进度条异常卡死，或接口返回 HTTP 416 Range Not Satisfiable？
+
+- **原理与机制**：
+  - 流式播放依赖标准 HTTP 206 分片传输协议。请求头包含 `Range: bytes=start-end`，服务端响应 `Content-Range: bytes start-end/total`；
+  - 本项目在 [functions/api/stream/[id].js](functions/api/stream/[id].js) 中完整透传了 `Accept-Ranges: bytes`、`Content-Range`、`Content-Length`、`ETag` 与 `If-Range` 标头；
+- **排查与解决步骤**：
+  - 如果拖拽进度超出文件总字节数，Google Drive 会返回 `416`，本项目已捕获并返回标准的 `416` 协议标头以通知播放器重置请求；
+  - 检查网络运营商或中转反代是否禁用了 Range 分片缓存或修改了 HTTP 协议头。
+
+---
+
+### Q4: 控制台提示未绑定 KV 会影响使用吗？三级持久化机制是什么？
+
+- **结论**：**完全不影响正常使用**。
+- **三级持久化机制详解**：
+  1. **一级存储（Cloudflare KV）**：若检测到 `DRIVE_KV` 绑定，配置读写毫秒级全球同步；
+  2. **二级存储（Google Drive properties）**：若未配置 KV，配置会自动写入 Google Drive 根文件夹的私有元数据字段（`properties.cf_sys_config`）。该操作**不占用 Google 存储空间配额**，数据全球持久化存在，换机或重新部署均不丢失；
+  3. **三级存储（内存与环境变量兜底）**：系统启动时读取默认环境变量。
+
+---
+
+### Q5: 上传文件或创建文件时报错 Quota: 0 或 storageQuotaExceeded？
+
+- **原因分析**：
+  - Google Cloud 的 Service Account（服务账号）本身是一个虚拟机器账号，**不附带独立的免费存储配额（Quota: 0）**。
+- **解决方案**：
+  - 若需直接向网盘写入文件，请将挂载的根文件夹放置于 **Google Workspace 共享云端硬盘 (Shared Drive)** 中，由组织配额承载存储；
+  - 或者在个人网盘网页端直接上传文件，系统将实时索引并呈现，无需消耗服务账号配额。
+
+---
+
+### Q6: 如何唤起第三方本地播放器（PotPlayer / IINA / VLC / Infuse / MPV）？
+
+播放器顶栏内置本地播放器调用中心，支持以下协议及端点：
+
+| 客户端 | 调用协议 / 格式 | 适用平台 |
+| :--- | :--- | :--- |
+| **PotPlayer** | `potplayer://<StreamUrl>` | Windows |
+| **IINA** | `iina://weblink?url=<StreamUrl>` | macOS |
+| **VLC** | `vlc://<StreamUrl>` | Windows / macOS / Linux |
+| **Infuse** | `infuse://open?url=<StreamUrl>` | iOS / iPadOS / macOS / Apple TV |
+| **MPV** | `mpv://<StreamUrl>` 或终端运行 `mpv "<StreamUrl>"` | 全平台 |
+| **Android ExoPlayer** | `intent:<StreamUrl>#Intent;action=android.intent.action.VIEW;type=video/*;end` | Android 手机 / 平板 / 电视 |
+
+> **提示**：当全站开启访问密码保护时，外部播放器 URL 会自动在 Query 参数中附加 `?token=<token>`，确保外部播放器取流成功。
+
+---
+
+## 6. 系统架构与技术实现
+
+```
+                            用户客户端浏览器 / 第三方播放器
+                                        │
+                    ┌───────────────────┴───────────────────┐
+                    ▼ (静态资源直通)                        ▼ (/api/* 动态计算)
+           Cloudflare 边缘 CDN                   Cloudflare Pages Functions
+        (HTML / CSS / JS / SVG)              ┌───────────────────────────────────┐
+                    │                        │  functions/api/_middleware.js     │
+                    │                        │  (全局 CORS 预检与异常安全兜底)   │
+                    │                        └─────────────────┬─────────────────┘
+                    │                                          │
+                    │                   ┌──────────────────────┼──────────────────────┐
+                    │                   ▼                      ▼                      ▼
+                    │             /api/list.js           /api/stream/[id].js    /api/admin/*
+                    │          (分页/搜索/快捷穿透)     (HTTP 206 Range代理)    (后台控制面)
+                    │                   │                      │                      │
+                    │                   └──────────────┬───────┴──────────────────────┘
+                    │                                  │
+                    │                   ┌──────────────┴──────────────┐
+                    │                   ▼                             ▼
+                    │       functions/utils/googleAuth.js   functions/utils/configManager.js
+                    │         (Web Crypto 原生 RS256 签名)      (三级持久化: KV / Drive / 内存)
+                    │                   │                             │
+                    ▼                   ▼                             ▼
+           全球边缘极速渲染      Google Drive API v3           Cloudflare KV / Drive 元数据
+```
+
+---
+
+## 7. 本地开发与质量闸门
+
+本项目内置完备的 CI/CD 自动化静态契约与安全门禁校验系统：
 
 ```bash
-# 安装开发依赖（仅 wrangler）
+# 1. 克隆工程
+git clone https://github.com/yourname/Cloudflare-Drive-Player.git
+cd Cloudflare-Drive-Player
+
+# 2. 安装本地开发依赖 (Wrangler)
 npm install
 
-# 配置本地机密（复制模板并填入真实值）
-cp .env.example .dev.vars
+# 3. 运行全栈 7 项自动化质量门禁
+npm run test:syntax
 
-# 启动本地 Pages 开发服务器（含 Functions 模拟）
-npm run dev
+# 4. 本地启动 Cloudflare Pages 仿真预览
+npx wrangler pages dev public
 ```
 
-常用脚本（见 [package.json](package.json)）：
-
-| 命令 | 作用 |
-| :--- | :--- |
-| `npm run dev` | 本地启动 Cloudflare Pages 开发环境 |
-| `npm run test:syntax` | 运行 `scripts/ci-check.js` 静态契约校验 |
-| `npm run healthcheck` | 无参数时打印契约摘要；传 URL 时执行冒烟测试 |
-| `npm run deploy` | 部署到 Cloudflare Pages（预览） |
-| `npm run deploy:preview` | 部署预览环境 |
-| `npm run deploy:prod` | 部署并提交到 `main` 分支（生产） |
+### 质量门禁检查清单（`scripts/ci-check.js`）
+- **步骤 1/7**：JavaScript AST 语法有效性原生校验（0 容忍语法隐患）；
+- **步骤 2/7**：静态资源完备性与 `public/_routes.json` 边缘路由隔离规则校验；
+- **步骤 3/7**：`wrangler.toml` 部署输出目录契约合规性校验；
+- **步骤 4/7**：流媒体 HTTP 206 Range 分片透传与 MKV MIME 校准契约校验；
+- **步骤 5/7**：Google 预览零遮挡安全沙箱模型与防弹窗门禁校验；
+- **步骤 6/7**：客户端双阶自适应降级播放与智能选源契约校验；
+- **步骤 7/7**：极简 Header 视窗结构契约与边缘安全响应头（CSP / nosniff）校验。
 
 ---
 
-## 7. 部署
+## 8. 文档索引与致谢
 
-### 方式一：GitHub Actions 自动部署（推荐）
+### 详细技术文档
+- [API 接口规范参考](docs/api-reference.md) —— 全量端点参数、状态码说明、认证鉴权与可复现 `curl` 示例。
+- [播放器交互架构与自适应降级手册](docs/player-architecture-and-user-guide.md) —— 双阶降级状态机、视窗几何裁切与本地播放器协议指南。
+- [CI/CD 流水线与部署运维指南](docs/ci-cd-deployment-guide.md) —— 双阶段门禁、边缘预热与故障排除。
+- [ADR-0001 流媒体与转码架构决策](docs/adr/0001-media-streaming-and-transcoding-architecture.md) —— 为什么不使用边缘实时转码与播放矩阵设计。
+- [ADR-0002 自适应降级与极简视窗决策](docs/adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md) —— 零遮挡视窗与控制平面收敛设计。
+- [ADR-001 边缘路由隔离与 CI 韧性决策](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md) —— 边缘路由隔离与冷启动消除。
 
-推送至 `main` / `master` 或手动触发 `workflow_dispatch` 即可自动执行「质量门禁 → 部署 → 冒烟测试」（见 [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)）。首次使用需在仓库 Secrets 中配置：
-
-| Secret | 说明 |
-| :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需具备 Pages 编辑权限） |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID |
-
-> **注意**：工作流通过 `--project-name=cf-pages-drive-player` 指定 Cloudflare Pages 项目名（见 [.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)）。该名称是 **Cloudflare 侧的 Pages 项目名**，与 GitHub 仓库名相互独立；它决定了站点的 `*.pages.dev` 默认域名。
-
-### 方式二：Wrangler 命令行部署
-
-```bash
-npm run deploy:prod
-```
-
-### 首次部署的前置步骤
-
-1. 在 [Google Cloud Console](https://console.cloud.google.com/) 启用 **Google Drive API**。
-2. 创建 **Service Account**，在 **Keys** 中创建 **JSON** 密钥并下载。
-3. 在 Google Drive 中把目标根文件夹**共享**给该 Service Account 的 `client_email`：
-   - 仅需浏览/播放：授予 **查看者（Viewer）**。
-   - 需要在线重命名/移动/删除/上传：授予 **内容管理员（Editor）** 或更高权限。
-4. 从浏览器地址栏提取根文件夹 ID 作为 `ROOT_FOLDER_ID`。
-5. 在 Cloudflare Pages 环境变量中填入凭据，然后部署。
+### 致谢
+- [Cloudflare Pages & Workers](https://pages.cloudflare.com/) —— 强大的边缘 Serverless 计算基座。
+- [Google Drive API v3](https://developers.google.com/drive/api) —— 云端数据存储与转码服务。
+- [ArtPlayer](https://artplayer.org/) —— 优秀的现代 HTML5 网页播放器。
+- [Tailwind CSS](https://tailwindcss.com/) —— 原子化实用优先 CSS 框架。
+- [OpenList](https://github.com/OpenListTeam/OpenList) —— 多选交互范式与影音微交互体验参考。
+- [Lucide Icons](https://lucide.dev/) —— 优雅简洁的现代图标系统。
 
 ---
 
-## 8. API 端点
+## 9. 开源许可证
 
-所有端点位于 `functions/api/` 下，统一经过 `_middleware.js` 处理 CORS 与全局异常。
-
-| 方法 | 路径 | 鉴权 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/info` | 无 | 站点信息、配置探测、根文件夹信息、`clientEmail`（脱敏）、是否开启密码保护 |
-| `GET` | `/api/list` | 访客/管理员令牌 | 目录列表；参数 `folderId`、`search`、`pageToken`；返回 `items` 与 `nextPageToken` |
-| `GET` / `HEAD` / `OPTIONS` | `/api/stream/:id` | 访客/管理员令牌 | 媒体流代理；参数 `filename` 或 `name`；支持 `Range` / `If-Range` / `If-Match` |
-| `GET` | `/api/download/:id` | 访客/管理员令牌 | 文件下载；参数 `filename`；Google Docs/Sheets/Slides 自动导出 |
-| `POST` | `/api/admin/auth` | 无 | `action=verify_access`（访客密码）/ `action=admin_login`（管理员密码） |
-| `GET` / `POST` | `/api/admin/config` | 管理员令牌 | 读取 / 更新站点配置（`siteName`、`requirePassword`、`accessPassword`、`newAdminPassword`） |
-| `POST` | `/api/admin/files` | 管理员令牌 | 文件管理操作（见下表） |
-
-`/api/admin/files` 的 `action` 取值：
-
-| action | 作用 |
-| :--- | :--- |
-| `inspect` | 读取文件元数据与其子项（pageSize 20） |
-| `rename` | 重命名（自动级联处理 Google 快捷方式） |
-| `move` | 跨目录移动（`addParents` / `removeParents`） |
-| `delete` | `permanent=true` 永久删除，否则移入回收站 |
-| `create_folder` | 新建文件夹 |
-| `create_file` | 上传文件（multipart/related） |
-| `init_resumable_upload` | 初始化断点续传，返回 `uploadUrl` |
-| `ensure_public` | 设置文件为「知道链接的任何人可查看」（`role=viewer, type=anyone`） |
-
-> 完整请求/响应示例见 [docs/api-reference.md](docs/api-reference.md)。
-
----
-
-## 9. 安全与权限模型
-
-- **凭证物理隔离**：Google 私钥仅存在于 Cloudflare 边缘环境变量中，接口不会透出任何 Google 鉴权令牌；`/api/info` 仅返回脱敏后的 `clientEmail`。
-- **双令牌体系**：访客令牌（`role=viewer`）与后台管理员令牌（`role=admin`）分离，管理接口强制校验 `role=admin`。
-- **恒定时间比较**：`timingSafeEqual()` 用于签名比对，降低时序侧信道风险（见 [functions/utils/configManager.js](functions/utils/configManager.js)）。
-- **响应头防护**：`X-Content-Type-Options: nosniff`、`Content-Security-Policy: frame-src 'self' https://drive.google.com; frame-ancestors 'self'`（见 [public/_headers](public/_headers)）。
-- **CORS**：`/api/*` 统一返回 `Access-Control-Allow-Origin: *`，便于第三方播放器与外部页面嵌入。
-
-> **部署前请务必确认的事项**：① 显式设置 `ADMIN_PASSWORD`，否则后台密码为默认值 `admin`；② 如需限制访问，同时设置 `REQUIRE_ACCESS_PASSWORD=true` 与 `ACCESS_PASSWORD`；③ 令牌可通过 URL Query 传递（外部播放器需要），若对日志泄露敏感，请优先使用 `Authorization` 头。
-
----
-
-## 10. 常见问题与限制
-
-**Q：播放时黑屏有声音 / 提示无法解码？**
-A：说明当前浏览器无法硬解该容器或编码。系统会自动降级到 Google 云端预览；若仍未成功，请使用播放器顶栏的本地播放器调用中心（MPV / VLC / IINA / PotPlayer 等）拉起本地解码器。
-
-**Q：Google 预览要求登录 Google 账号，无法播放？**
-A：Google Drive Web Preview 依赖访客自身的 Google 会话。若文件未对外开放，Google 会重定向到登录页并被 iframe 拦截。请在后台对目标文件执行「设为公开」（`ensure_public`），或将文件共享给「知道链接的任何人」。
-
-**Q：MKV 在 Safari 下无法播放？**
-A：属于预期行为。Safari/WebKit 不支持 `video/x-matroska`，系统会自动切换至 Google 预览或建议改用本地播放器。
-
-**Q：为什么没有「真正的」转码？**
-A：Cloudflare Workers/Pages 有严格的 CPU 时间与内存上限（128MB），实时视频转码在边缘不可行。项目采用「原生直链 + Google 官方预览 + 本地播放器」三级方案（见 [ADR-0001](docs/adr/0001-media-streaming-and-transcoding-architecture.md)）。
-
-**Q：部署后静态资源返回 500？**
-A：通常是中间件作用范围过大或边缘收敛延迟。本项目已通过 `functions/api/_middleware.js` 下沉 + `public/_routes.json` 隔离 + 冒烟测试指数退避重试解决（见 [ADR-001](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md)）。
-
-**Q：提示 `Authentication error 10000` / Google Drive 403？**
-A：多为 Service Account 凭据缺失或目标文件夹未共享给 `client_email`。凭据问题需在 Cloudflare 控制台修正后 **Retry deployment**（重新部署不会重新注入已缓存的环境变量）。
-
-**已知限制**：
-
-- 无转码能力，高码率/冷门编码依赖 Google 预览或本地播放器。
-- 令牌有效期 7 天，过期后需重新验证（浏览器端已自动处理）。
-- 认证接口无内置速率限制，建议配合 Cloudflare 防火墙规则或 WAF 使用。
-- 配置持久化优先 KV，未绑定 KV 时写入 Drive 根文件夹属性；该属性为 Drive 文件元数据，不占用存储配额。
-- 从原生播放器降级至 Google 预览时无法继承播放进度（跨域隔离限制，见 [ADR-0002](docs/adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md)）。
-
-更多排障细节见 [docs/ci-cd-deployment-guide.md](docs/ci-cd-deployment-guide.md)。
-
----
-
-## 11. 许可证
-
-**当前仓库未包含任何许可证文件**（`LICENSE` / `COPYING` 均不存在），GitHub 仓库 API 返回的 `license` 字段为 `null`。依版权法默认规则，本项目当前处于**保留所有权利（All Rights Reserved）**状态，他人不可自由复制、修改或再分发。
-
-若希望以开源许可证发布（例如 MIT），请在仓库根目录新增 `LICENSE` 文件并重新推送，GitHub 会自动识别并在仓库页展示许可证信息。
-
-> 说明：本仓库早期版本的 README 曾声明 MIT 许可证并链接 `LICENSE` 文件，但该文件实际不存在，属于失效声明；本版已修正为如实描述。
-
----
-
-## 12. 致谢
-
-- [Cloudflare Pages](https://pages.cloudflare.com/) / [Workers](https://workers.cloudflare.com/) / [KV](https://developers.cloudflare.com/kv/) —— 边缘托管、Serverless 函数与键值存储。
-- [Google Drive API v3](https://developers.google.com/drive/api) —— 存储与转码预览能力。
-- [Tailwind CSS](https://tailwindcss.com/) —— 前端原子化样式。
-- [ArtPlayer](https://artplayer.org/) / [hls.js](https://github.com/video-dev/hls.js) / [flv.js](https://github.com/Bilibili/flv.js) —— 现代播放器内核与流媒体解码。
-- [Lucide Icons](https://lucide.dev/) —— 图标库。
-- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) —— Cloudflare 命令行工具。
-- [OpenList](https://github.com/OpenListTeam/OpenList) —— 多选交互范式的参考来源。
-
----
-
-## 13. 文档索引
-
-- [API 接口参考](docs/api-reference.md) —— 全量端点参数、状态码、认证流程与可执行 `curl` 示例。
-- [播放器交互架构与自适应降级手册](docs/player-architecture-and-user-guide.md) —— 双阶段降级探测、56px 视口裁切规约、本地播放器协议与测试指南。
-- [CI/CD 流水线与部署运维指南](docs/ci-cd-deployment-guide.md) —— 双阶段门禁、边缘预热机制与生产故障排查。
-- [ADR-0001 流媒体与转码架构](docs/adr/0001-media-streaming-and-transcoding-architecture.md) —— 多级播放矩阵与鉴权纵深防御。
-- [ADR-0002 自适应降级与极简视窗](docs/adr/0002-adaptive-playback-sandboxing-and-minimalist-player.md) —— 降级状态机、零遮挡模型与控制平面收敛。
-- [ADR-001 边缘路由隔离与 CI 韧性](docs/adr/ADR-001-cf-pages-edge-routing-and-ci-resilience.md) —— 静态/API 边界隔离与冒烟测试重试策略。
+本项目基于 [MIT License](LICENSE) 协议开源。

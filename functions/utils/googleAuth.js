@@ -56,15 +56,18 @@ export function getCredentials(env) {
     }
   }
 
-  if (env.GOOGLE_CLIENT_EMAIL && env.GOOGLE_PRIVATE_KEY) {
+  const clientEmail = env.CLIENT_EMAIL || env.GOOGLE_CLIENT_EMAIL;
+  const privateKey = env.PRIVATE_KEY || env.GOOGLE_PRIVATE_KEY;
+
+  if (clientEmail && privateKey) {
     return {
-      clientEmail: env.GOOGLE_CLIENT_EMAIL,
-      privateKey: env.GOOGLE_PRIVATE_KEY,
+      clientEmail: clientEmail.trim(),
+      privateKey: privateKey.trim().replace(/\\n/g, "\n"),
       rootFolderId: env.ROOT_FOLDER_ID ? env.ROOT_FOLDER_ID.trim() : "root",
     };
   }
 
-  throw new Error("未配置 Google 凭据。请在 Cloudflare Pages 环境变量中配置 SERVICE_ACCOUNT_JSON。");
+  throw new Error("未配置 Google 凭据。请在 Cloudflare Pages 环境变量中配置 SERVICE_ACCOUNT_JSON 或 (CLIENT_EMAIL 与 PRIVATE_KEY)。");
 }
 
 /**

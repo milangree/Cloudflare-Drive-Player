@@ -224,9 +224,16 @@ export async function verifyAccessToken(token, env) {
     const payload = JSON.parse(atob(payloadB64));
     if (!payload.exp || Date.now() > payload.exp) return false;
     
-    // 校验签名（兼容带或不带 salt）
-    const expectedSign = await hashToken(payloadB64 + config.accessPassword);
-    return timingSafeEqual(sign, expectedSign);
+    // 校验签名（支持 JWT_SECRET 盐值加固，同时向下兼容未加盐签名）
+    const enhancedSecret = env && env.JWT_SECRET ? config.accessPassword + env.JWT_SECRET : config.accessPassword;
+    const expectedSign = await hashToken(payloadB64 + enhancedSecret);
+    if (timingSafeEqual(sign, expectedSign)) return true;
+
+    if (env && env.JWT_SECRET) {
+      const fallbackSign = await hashToken(payloadB64 + config.accessPassword);
+      if (timingSafeEqual(sign, fallbackSign)) return true;
+    }
+    return false;
   } catch (_) {
     return false;
   }
@@ -252,6 +259,7 @@ export async function verifyAdminToken(token, env) {
   if (!token) return false;
   const config = await getSystemConfig(env);
   const secret = config.adminPassword || "admin";
+  const enhancedSecret = env && env.JWT_SECRET ? secret + env.JWT_SECRET : secret;
 
   try {
     const [payloadB64, sign] = token.split(".");
@@ -260,8 +268,14 @@ export async function verifyAdminToken(token, env) {
     if (payload.role !== "admin") return false;
     if (!payload.exp || Date.now() > payload.exp) return false;
 
-    const expectedSign = await hashToken(payloadB64 + secret);
-    return timingSafeEqual(sign, expectedSign);
+    const expectedSign = await hashToken(payloadB64 + enhancedSecret);
+    if (timingSafeEqual(sign, expectedSign)) return true;
+
+    if (env && env.JWT_SECRET) {
+      const fallbackSign = await hashToken(payloadB64 + secret);
+      if (timingSafeEqual(sign, fallbackSign)) return true;
+    }
+    return false;
   } catch (_) {
     return false;
   }
