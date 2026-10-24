@@ -152,7 +152,7 @@
   </main>
 
   <!-- 视频/音频播放模态窗口 (Modal) -->
-  <div id="player-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 transition-opacity duration-200">
+  <div id="player-modal" role="dialog" aria-modal="true" aria-label="媒体播放器" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6 transition-opacity duration-200">
     <div id="player-dialog" class="relative w-full max-w-6xl h-[80vh] max-h-[820px] min-h-[380px] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col">
       <!-- 播放器顶部条 (响应式自适应排版，极简纯净设计) -->
       <div id="player-header" class="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-800/80 bg-slate-900/95 select-none cursor-default gap-2 sm:gap-3">
@@ -364,7 +364,7 @@
   </div>
 
   <!-- 后台管理模态框 (Admin Dashboard) -->
-  <div id="admin-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6 transition-all">
+  <div id="admin-modal" role="dialog" aria-modal="true" aria-label="后台管理" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6 transition-all">
     <div class="relative w-full max-w-2xl bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
       <!-- 头部 -->
       <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 select-none">
@@ -605,7 +605,7 @@
   </div>
 
   <!-- 深度音频专注视窗 (黑胶 + 同步滚动歌词 + 播放列表 + 常驻下载) -->
-  <div id="audio-studio-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
+  <div id="audio-studio-modal" role="dialog" aria-modal="true" aria-label="音频专注视窗" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
     <div class="relative w-full max-w-4xl h-[86vh] max-h-[760px] rounded-2xl modal-window-card flex flex-col overflow-hidden">
       <!-- 顶部状态栏 -->
       <div class="flex items-center justify-between px-4 py-3 modal-window-header text-xs">
@@ -701,7 +701,7 @@
   </div>
 
   <!-- 全能沉浸式文档查看器 (PDF / Markdown / 代码 + 常驻下载) -->
-  <div id="doc-viewer-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
+  <div id="doc-viewer-modal" role="dialog" aria-modal="true" aria-label="文档预览" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 backdrop-blur-2xl p-2 sm:p-6 overflow-hidden">
     <div class="relative w-full max-w-5xl h-[88vh] max-h-[820px] rounded-2xl modal-window-card flex flex-col overflow-hidden">
       <!-- 文档工具栏 -->
       <div class="flex items-center justify-between px-4 py-2.5 modal-window-header text-xs select-none">
@@ -730,7 +730,7 @@
   </div>
 
   <!-- 轻量全局 Toast 提示 -->
-  <div id="toast" class="fixed bottom-6 left-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 border border-brand-500/40 text-slate-100 text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true" class="fixed bottom-6 left-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 border border-brand-500/40 text-slate-100 text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2">
     <i data-lucide="check-circle" class="w-4 h-4 text-brand-500"></i>
     <span id="toast-message">提示内容</span>
   </div>

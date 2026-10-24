@@ -5,6 +5,12 @@
 import { getAccessToken, getCredentials } from "./googleAuth.js";
 
 /**
+ * Drive 配置读写出站超时预算 (毫秒)。
+ * 无超时的 fetch 在边缘运行时可能长时间挂起并持续占用 CPU/子请求配额。
+ */
+const CONFIG_TIMEOUT_MS = 20000;
+
+/**
  * 系统设置与安全存储
  * 采用三级存储机制保证 100% 可靠持久化：
  * 1. Cloudflare KV（若绑定了 DRIVE_KV）
@@ -39,6 +45,7 @@ async function readConfigFromDrive(env) {
       `https://www.googleapis.com/drive/v3/files/${rootFolderId}?supportsAllDrives=true&fields=id,properties`,
       {
         headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
       }
     );
 
@@ -89,6 +96,7 @@ async function writeConfigToDrive(env, config) {
           cf_sys_config: JSON.stringify(payload),
         },
       }),
+      signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
     });
 
     if (patchResp.ok) {

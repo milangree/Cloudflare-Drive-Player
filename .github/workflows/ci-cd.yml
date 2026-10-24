@@ -58,6 +58,10 @@ jobs:
         # 开发脚手架依赖安全扫描与预警
         run: npm audit || true
 
+      - name: Run Documentation Drift Gate
+        # 文档漂移闸门：路由覆盖、中英双语配对、README 目录锚点可解析、关键文档存在性
+        run: npm run test:docs
+
   # 阶段 2: 部署到 Cloudflare Pages (分支环境或生产环境)
   deploy:
     name: Deploy to Cloudflare Pages
@@ -76,6 +80,13 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+
+      - name: Stamp Deploy Version
+        # 写入部署版本戳（提交 SHA + UTC 构建时间），随静态资源一同部署，便于线上溯源
+        run: |
+          mkdir -p public
+          printf '{"version":"%s","builtAt":"%s"}\n' "${GITHUB_SHA}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > public/version.json
+          echo "Stamped public/version.json -> $(cat public/version.json)"
 
       - name: Deploy to Cloudflare Pages (Preview / Production)
         id: pages-deploy
@@ -96,4 +107,68 @@ jobs:
             echo "Deployment URL not captured from action output, falling back to production alias: $DEPLOY_URL"
           fi
           echo "Executing post-deploy edge healthcheck against $DEPLOY_URL..."
+          node scripts/healthcheck.js "$DEPLOY_URL"
+
+      - name: Verify Deploy Version Stamp
+        # 版本戳必须随部署产物下发，用于线上问题溯源
+        run: |
+          DEPLOY_URL="${{ steps.pages-deploy.outputs.deployment-url }}"
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL="https://cf-pages-drive-player.pages.dev"
+          fi
+          STAMP=$(curl -sf "$DEPLOY_URL/version.json")
+          echo "Deployed version stamp: $STAMP"
+          if ! echo "$STAMP" | grep -q '"version":"[0-9a-f]\{40\}"'; then
+            echo "❌ 部署产物中缺少合法的提交 SHA 版本戳 (public/version.json)"
+            exit 1
+          fi
+          echo "✅ 版本戳校验通过"
+
+  # 阶段 3: 回滚部署（手动触发，重部署任意历史提交以恢复线上）
+  rollback:
+    name: Rollback Deploy
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code (Rollback Target Ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.rollback_ref || 'main' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Offline Functions Bundle Gate (wrangler)
+        run: npx wrangler pages functions build
+
+      - name: Stamp Deploy Version
+        run: |
+          mkdir -p public
+          printf '{"version":"%s","builtAt":"%s"}\n' "${GITHUB_SHA}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > public/version.json
+          echo "Rollback target: ${GITHUB_SHA} (${{ github.event.inputs.rollback_ref || 'main' }})"
+
+      - name: Deploy Rollback Build to Cloudflare Pages
+        id: rollback-deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy public --project-name=cf-pages-drive-player --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify Rollback
+        run: |
+          DEPLOY_URL="${{ steps.rollback-deploy.outputs.deployment-url }}"
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL="https://cf-pages-drive-player.pages.dev"
+          fi
+          echo "Verifying rollback against $DEPLOY_URL..."
           node scripts/healthcheck.js "$DEPLOY_URL"

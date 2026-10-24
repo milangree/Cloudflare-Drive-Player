@@ -177,3 +177,270 @@ test("configManager 导出 timingSafeEqual（供 Webhook 密钥校验复用）",
   assert.equal(mod.timingSafeEqual("abc", "abcd"), false);
   assert.equal(mod.timingSafeEqual("", ""), true);
 });
+
+// ---------------------------------------------------------------------------
+// 本轮新增契约：中间件错误隔离 / KV 幂等去重 / 流式 multipart 上传
+// ---------------------------------------------------------------------------
+
+/** 最小可用的假 KV 存储 */
+function makeFakeKV(initial = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    store,
+    async get(key) {
+      return store.has(key) ? store.get(key) : null;
+    },
+    async put(key, value) {
+      store.set(key, value);
+    },
+    async delete(key) {
+      store.delete(key);
+    },
+  };
+}
+
+/** 把 ReadableStream 完整读出为 Uint8Array */
+async function drainStream(stream) {
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** 生成一个测试用 RSA 服务账号私钥（PEM），避免在仓库里固化任何私钥 */
+async function makeTestServiceAccount() {
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign"]
+  );
+  const pkcs8 = await crypto.subtle.exportKey("pkcs8", pair.privateKey);
+  const b64 = Buffer.from(pkcs8).toString("base64");
+  const pem = `-----BEGIN PRIVATE KEY-----\n${b64.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----\n`;
+  return JSON.stringify({
+    client_email: "test-account@example.iam.gserviceaccount.com",
+    private_key: pem,
+    root_folder_id: "root",
+  });
+}
+
+test("_middleware: 未捕获异常返回固定文案，不泄露原始错误文本", async () => {
+  const { onRequest } = await importModule(join(FUNCTIONS_DIR, "api/_middleware.js"));
+
+  const request = new Request("https://example.com/api/anything");
+  const context = {
+    request,
+    next: async () => {
+      throw new Error("C:\\secret\\internal.js:12 真实内部堆栈");
+    },
+  };
+
+  const resp = await onRequest(context);
+  assert.equal(resp.status, 500);
+  const body = await resp.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error, "服务器内部错误，请稍后重试。");
+  assert.ok(
+    !JSON.stringify(body).includes("internal.js"),
+    "500 响应不得泄露内部路径或堆栈"
+  );
+});
+
+test("telegram webhook: KV 已记录同一 update_id 时直接幂等返回", async () => {
+  const { onRequestPost } = await importModule(join(FUNCTIONS_DIR, "api/telegram/webhook.js"));
+  const kv = makeFakeKV({ "TG_UPDATE:777": "1700000000000" });
+
+  const request = new Request("https://example.com/api/telegram/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      update_id: 777,
+      message: {
+        chat: { id: 1 },
+        from: { id: 111, username: "allowed" },
+        document: { file_id: "f1", file_unique_id: "u7", file_name: "a.pdf", file_size: 10 },
+      },
+    }),
+  });
+
+  const context = {
+    request,
+    env: { TELEGRAM_BOT_TOKEN: "123456:TEST", TELEGRAM_ALLOWED_USERS: "@allowed", DRIVE_KV: kv },
+    params: {},
+    url: new URL("https://example.com/api/telegram/webhook"),
+  };
+
+  const resp = await onRequestPost(context);
+  const body = await resp.json();
+  assert.equal(resp.status, 200);
+  assert.equal(body.deduped, "kv", "已处理的 update_id 必须走 KV 幂等短路");
+});
+
+test("telegram webhook: 流式 multipart 上传携带完整文件内容与幂等属性", async () => {
+  const { onRequestPost } = await importModule(join(FUNCTIONS_DIR, "api/telegram/webhook.js"));
+  const serviceAccount = await makeTestServiceAccount();
+
+  const captured = {};
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, options = {}) => {
+    const u = String(url);
+    if (u.includes("oauth2.googleapis.com/token")) {
+      return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+    }
+    if (u.includes("/getFile")) {
+      return new Response(
+        JSON.stringify({ ok: true, result: { file_path: "docs/a.txt", file_size: 5 } }),
+        { status: 200 }
+      );
+    }
+    if (u.includes("/sendMessage")) {
+      return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+    }
+    if (u.includes("api.telegram.org/file/")) {
+      return new Response(new Uint8Array([104, 101, 108, 108, 111]), { status: 200 }); // "hello"
+    }
+    if (u.includes("uploadType=multipart")) {
+      captured.options = options;
+      captured.bytes = await drainStream(options.body);
+      return new Response(JSON.stringify({ id: "DRIVE_FILE_1", name: "a.txt" }), { status: 200 });
+    }
+    if (u.includes("drive/v3/files?")) {
+      return new Response(JSON.stringify({ files: [] }), { status: 200 }); // 无历史重复
+    }
+    if (u.includes("drive/v3/files/")) {
+      return new Response(JSON.stringify({ id: "root", properties: {} }), { status: 200 });
+    }
+    throw new Error(`mock fetch 未覆盖: ${u}`);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/telegram/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        update_id: 888,
+        message: {
+          chat: { id: 1 },
+          from: { id: 111, username: "allowed" },
+          document: { file_id: "f2", file_unique_id: "u8", file_name: "a.txt", file_size: 5 },
+        },
+      }),
+    });
+
+    const context = {
+      request,
+      env: {
+        TELEGRAM_BOT_TOKEN: "123456:TEST",
+        TELEGRAM_ALLOWED_USERS: "@allowed",
+        SERVICE_ACCOUNT_JSON: serviceAccount,
+      },
+      params: {},
+      url: new URL("https://example.com/api/telegram/webhook"),
+    };
+
+    const resp = await onRequestPost(context);
+    const body = await resp.json();
+    assert.equal(resp.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.fileId, "DRIVE_FILE_1");
+
+    // 流式上传必须声明 duplex:'half'（ReadableStream body 的强制要求）
+    assert.equal(captured.options.duplex, "half", "必须使用流式 body（duplex:'half'）");
+
+    const text = new TextDecoder().decode(captured.bytes);
+    assert.ok(text.includes('"name":"a.txt"'), "multipart body 必须包含元数据 JSON");
+    assert.ok(text.includes("hello"), "multipart body 必须包含文件原文");
+    assert.ok(text.includes("cfTgFileUniqueId"), "必须写入幂等 appProperties");
+    assert.ok(text.trimEnd().endsWith("--"), "multipart body 必须以 boundary 结束标记收尾");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("telegram webhook: 上传成功后写入 KV 幂等键", async () => {
+  const { onRequestPost } = await importModule(join(FUNCTIONS_DIR, "api/telegram/webhook.js"));
+  const serviceAccount = await makeTestServiceAccount();
+  const kv = makeFakeKV();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("oauth2.googleapis.com/token")) {
+      return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+    }
+    if (u.includes("/getFile")) {
+      return new Response(
+        JSON.stringify({ ok: true, result: { file_path: "docs/b.txt", file_size: 2 } }),
+        { status: 200 }
+      );
+    }
+    if (u.includes("/sendMessage")) {
+      return new Response(JSON.stringify({ ok: true, result: {} }), { status: 200 });
+    }
+    if (u.includes("api.telegram.org/file/")) {
+      return new Response(new Uint8Array([65, 66]), { status: 200 }); // "AB"
+    }
+    if (u.includes("uploadType=multipart")) {
+      return new Response(JSON.stringify({ id: "DRIVE_FILE_2", name: "b.txt" }), { status: 200 });
+    }
+    if (u.includes("drive/v3/files?")) {
+      return new Response(JSON.stringify({ files: [] }), { status: 200 });
+    }
+    if (u.includes("drive/v3/files/")) {
+      return new Response(JSON.stringify({ id: "root", properties: {} }), { status: 200 });
+    }
+    throw new Error(`mock fetch 未覆盖: ${u}`);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/telegram/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        update_id: 999,
+        message: {
+          chat: { id: 1 },
+          from: { id: 111, username: "allowed" },
+          document: { file_id: "f3", file_unique_id: "u9", file_name: "b.txt", file_size: 2 },
+        },
+      }),
+    });
+
+    const context = {
+      request,
+      env: {
+        TELEGRAM_BOT_TOKEN: "123456:TEST",
+        TELEGRAM_ALLOWED_USERS: "@allowed",
+        SERVICE_ACCOUNT_JSON: serviceAccount,
+        DRIVE_KV: kv,
+      },
+      params: {},
+      url: new URL("https://example.com/api/telegram/webhook"),
+    };
+
+    const resp = await onRequestPost(context);
+    assert.equal(resp.status, 200);
+    assert.equal((await resp.json()).ok, true);
+    assert.ok(kv.store.has("TG_UPDATE:999"), "上传成功后必须写入 KV 幂等键");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

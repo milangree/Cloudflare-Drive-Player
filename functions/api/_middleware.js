@@ -29,10 +29,12 @@ export async function onRequest(context) {
       headers: newHeaders,
     });
   } catch (err) {
+    // 原始错误只进服务端日志；响应体回固定文案，避免把内部路径、堆栈或凭据细节回吐给客户端
+    console.error("[api-middleware] unhandled error:", err && (err.stack || err.message));
     return new Response(
       JSON.stringify({
         success: false,
-        error: err.message || "Internal Server Error",
+        error: "服务器内部错误，请稍后重试。",
       }),
       {
         status: 500,

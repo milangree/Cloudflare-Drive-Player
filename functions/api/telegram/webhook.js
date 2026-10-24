@@ -19,6 +19,43 @@ const TG_MAX_FILE_BYTES = 20 * 1024 * 1024;
 const TG_TIMEOUT_MS = 15000;
 const DRIVE_TIMEOUT_MS = 60000;
 
+// KV 幂等键存活时长（秒）：覆盖 Telegram 的重推窗口即可
+const KV_DEDUP_TTL_SECONDS = 3600;
+
+/**
+ * 将多个 ReadableStream / Uint8Array 顺序拼接为一个流式 body。
+ * 上传时避免把整个文件读入内存（原先 arrayBuffer + 全量拼接会让内存峰值翻倍）。
+ */
+function concatStreams(...parts) {
+  const streams = parts.map((part) =>
+    part instanceof ReadableStream
+      ? part
+      : new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(part));
+            controller.close();
+          },
+        })
+  );
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for (const stream of streams) {
+          const reader = stream.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+}
+
 /**
  * HTML 转义：所有插值进 Telegram parse_mode=HTML 的内容必须先转义，
  * 否则文件名含 < 或 & 会让 sendMessage 返回 400，用户将收不到任何反馈。
@@ -153,6 +190,22 @@ export async function onRequestPost(context) {
     update = await request.json();
   } catch (_) {
     return new Response("Invalid JSON", { status: 400 });
+  }
+
+  // 1.1 KV 幂等：同一 update_id 只处理一次。
+  // 与 Drive appProperties 去重互补 —— 后者按「文件维度」去重，本处按「投递维度」去重，
+  // 可拦截同一文件被 Telegram 重推、或换了目标目录后仍重复处理的情况。
+  const updateId = update && update.update_id != null ? String(update.update_id) : "";
+  const kvDedupKey = updateId ? `TG_UPDATE:${updateId}` : "";
+  if (env.DRIVE_KV && kvDedupKey) {
+    try {
+      const seen = await env.DRIVE_KV.get(kvDedupKey);
+      if (seen) {
+        return new Response(JSON.stringify({ ok: true, deduped: "kv" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    } catch (_) {}
   }
 
   const message = update.message || update.channel_post;
@@ -316,16 +369,31 @@ export async function onRequestPost(context) {
           `🔗 <b>在线播放/浏览:</b>\n<a href="${playUrl}">点击在线查看</a>\n\n` +
           `📥 <b>本站下载直链:</b>\n<a href="${directDownloadUrl}">点击极速下载</a>`
       ).catch(() => false);
+      if (env.DRIVE_KV && kvDedupKey) {
+        await env.DRIVE_KV.put(kvDedupKey, String(Date.now()), {
+          expirationTtl: KV_DEDUP_TTL_SECONDS,
+        }).catch(() => null);
+      }
       return new Response(JSON.stringify({ ok: true, deduped: true, fileId: existing.id }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // 11. 读取文件内容并二次校验大小
-    const fileBuffer = await tgRes.arrayBuffer();
-    if (fileBuffer.byteLength > TG_MAX_FILE_BYTES) throw tgError("FILE_TOO_LARGE", false);
+    // 11. 大小二次校验：优先信任声明值；无声明值时退化为一次性读取后再校验
+    let fileStream = tgRes.body;
+    if (declaredSize > TG_MAX_FILE_BYTES) throw tgError("FILE_TOO_LARGE", false);
+    if (!fileStream) {
+      const fileBuffer = await tgRes.arrayBuffer();
+      if (fileBuffer.byteLength > TG_MAX_FILE_BYTES) throw tgError("FILE_TOO_LARGE", false);
+      fileStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(fileBuffer));
+          controller.close();
+        },
+      });
+    }
 
-    // 12. 使用 Google Drive multipart 上传协议
+    // 12. 使用 Google Drive multipart 上传协议（流式拼接，整文件不再进内存）
     const boundary = "-------CFDrivePlayerTGBoundary" + Date.now();
     const delimiter = `\r\n--${boundary}\r\n`;
     const closeDelimiter = `\r\n--${boundary}--`;
@@ -347,23 +415,27 @@ export async function onRequestPost(context) {
     );
     const tailPart = encoder.encode(closeDelimiter);
 
-    const fullPayload = new Uint8Array(headPart.byteLength + fileBuffer.byteLength + tailPart.byteLength);
-    fullPayload.set(headPart, 0);
-    fullPayload.set(new Uint8Array(fileBuffer), headPart.byteLength);
-    fullPayload.set(tailPart, headPart.byteLength + fileBuffer.byteLength);
+    const bodyStream = concatStreams(headPart, fileStream, tailPart);
 
     const uploadUrl =
       "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true";
+
+    const uploadHeaders = {
+      Authorization: `Bearer ${googleToken}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    };
+    // 声明值已知时给出确切长度，规避分块传输编码的兼容性差异
+    if (declaredSize > 0) {
+      uploadHeaders["Content-Length"] = String(headPart.byteLength + declaredSize + tailPart.byteLength);
+    }
 
     let driveUploadRes;
     try {
       driveUploadRes = await fetch(uploadUrl, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${googleToken}`,
-          "Content-Type": `multipart/related; boundary=${boundary}`,
-        },
-        body: fullPayload,
+        headers: uploadHeaders,
+        body: bodyStream,
+        duplex: "half",
         signal: AbortSignal.timeout(DRIVE_TIMEOUT_MS),
       });
     } catch (_) {
@@ -398,6 +470,12 @@ export async function onRequestPost(context) {
         `🔗 <b>在线播放/浏览:</b>\n<a href="${playUrl}">点击在线查看</a>\n\n` +
         `📥 <b>本站下载直链:</b>\n<a href="${directDownloadUrl}">点击极速下载</a>`
     ).catch(() => false);
+
+    if (env.DRIVE_KV && kvDedupKey) {
+      await env.DRIVE_KV.put(kvDedupKey, String(Date.now()), {
+        expirationTtl: KV_DEDUP_TTL_SECONDS,
+      }).catch(() => null);
+    }
 
     return new Response(JSON.stringify({ ok: true, fileId: uploadedFile.id }), {
       headers: { "Content-Type": "application/json" },

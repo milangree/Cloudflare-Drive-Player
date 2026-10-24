@@ -1,0 +1,32 @@
+# 定时探针：每 6 小时对生产端点做一次全链路健康检查，尽早发现线上回归
+name: Scheduled Healthcheck
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: Scheduled Edge Probe
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Probe Production Endpoint
+        run: node scripts/healthcheck.js https://cf-pages-drive-player.pages.dev
+
+      - name: Report Probe Status
+        if: always()
+        run: |
+          echo "Scheduled probe finished at $(date -u +%Y-%m-%dT%H:%M:%SZ) against cf-pages-drive-player.pages.dev"

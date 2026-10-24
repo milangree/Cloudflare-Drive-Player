@@ -229,6 +229,17 @@ async function runHealthCheck() {
           return false;
         }
       }
+    },
+    {
+      name: '部署版本戳 (GET /version.json)',
+      path: '/version.json',
+      // 本地 wrangler dev 不生成版本戳，返回 404 属预期；生产部署必须返回 40 位提交 SHA
+      expectedStatus: [200, 404],
+      validate: async (resp) => {
+        if (resp.status === 404) return true;
+        const data = await resp.json();
+        return typeof data.version === 'string' && /^[0-9a-f]{40}$/.test(data.version);
+      }
     }
   ];
 

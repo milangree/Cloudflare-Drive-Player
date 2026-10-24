@@ -6,6 +6,9 @@
 let cachedToken = null;
 let tokenExpiry = 0;
 
+/** OAuth token 交换出站超时预算 (毫秒) */
+const TOKEN_TIMEOUT_MS = 20000;
+
 /**
  * 将 PEM 格式私钥转换为 ArrayBuffer
  */
@@ -131,6 +134,7 @@ export async function getAccessToken(env) {
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: jwt,
     }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
 
   if (!tokenResponse.ok) {
