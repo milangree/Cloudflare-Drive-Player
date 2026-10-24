@@ -10,7 +10,7 @@
     "deploy:preview": "wrangler pages deploy public",
     "deploy:prod": "wrangler pages deploy public --branch=main",
     "test:syntax": "node scripts/ci-check.js",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test test/*.test.js",
     "healthcheck": "node scripts/healthcheck.js"
   },
   "devDependencies": {
