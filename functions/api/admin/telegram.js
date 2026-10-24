@@ -194,6 +194,158 @@ export async function onRequest(context) {
       }
     }
 
+    // 存储能力诊断：判定目标目录是否接受服务账号写入，并给出精确修复步骤。
+    // 存在的意义：服务账号配额问题在不同账号类型下表现不同，必须实测区分，
+    // 否则只能靠猜（个人网盘 / 共享硬盘已满 / 权限不足 三种情况的修法完全不同）。
+    if (action === "capability") {
+      const { getAccessToken, getCredentials } = await import("../../utils/googleAuth.js");
+      try {
+        const googleToken = await getAccessToken(env);
+        const creds = getCredentials(env);
+        const targetFolderId = config.tgUploadFolderId || creds.rootFolderId || "root";
+
+        const out = {
+          target: { folderId: targetFolderId, name: null, driveId: null, isSharedDrive: false },
+          sharedDrives: [],
+          writable: false,
+          writeError: "",
+          verdict: "unknown",
+          remediation: [],
+        };
+
+        // 1) 目标目录元信息。driveId 仅在共享硬盘内的条目上返回，可区分个人网盘与共享硬盘
+        try {
+          const metaRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+              targetFolderId
+            )}?fields=id,name,driveId,mimeType&supportsAllDrives=true`,
+            {
+              headers: { Authorization: `Bearer ${googleToken}` },
+              signal: AbortSignal.timeout(TG_TIMEOUT_MS),
+            }
+          );
+          if (metaRes.ok) {
+            const meta = await metaRes.json().catch(() => ({}));
+            out.target.name = meta.name || null;
+            out.target.driveId = meta.driveId || null;
+            out.target.isSharedDrive = Boolean(meta.driveId);
+          } else {
+            out.target.readError = `HTTP ${metaRes.status}`;
+          }
+        } catch (err) {
+          out.target.readError = String((err && err.message) || err);
+        }
+
+        // 2) 列出服务账号作为成员可访问的共享硬盘（判断它是否具备写入共享硬盘的资格）
+        try {
+          const drvRes = await fetch(
+            "https://www.googleapis.com/drive/v3/drives?pageSize=100&fields=drives(id,name)",
+            {
+              headers: { Authorization: `Bearer ${googleToken}` },
+              signal: AbortSignal.timeout(TG_TIMEOUT_MS),
+            }
+          );
+          if (drvRes.ok) {
+            const drv = await drvRes.json().catch(() => ({}));
+            out.sharedDrives = drv.drives || [];
+          }
+        } catch (_) {}
+
+        // 3) 真实写入实测：上传 1 字节探针文件后立即删除，拿到 Google 的原始拒绝原因
+        try {
+          const probeName = `.capability-probe-${Date.now()}.txt`;
+          const boundary = "-------CFDriveCapBoundary" + Date.now();
+          const delimiter = `\r\n--${boundary}\r\n`;
+          const closeDelimiter = `\r\n--${boundary}--`;
+          const encoder = new TextEncoder();
+          const metadata = { name: probeName, mimeType: "text/plain", parents: [targetFolderId] };
+          const head = encoder.encode(
+            delimiter +
+              "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
+              JSON.stringify(metadata) +
+              delimiter +
+              "Content-Type: text/plain\r\n\r\n"
+          );
+          const tail = encoder.encode(closeDelimiter + "\r\n");
+          const body = new Uint8Array(head.byteLength + 1 + tail.byteLength);
+          body.set(head, 0);
+          body.set(encoder.encode("x"), head.byteLength);
+          body.set(tail, head.byteLength + 1);
+
+          const upRes = await fetch(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${googleToken}`,
+                "Content-Type": `multipart/related; boundary=${boundary}`,
+              },
+              body,
+              signal: AbortSignal.timeout(30000),
+            }
+          );
+          if (upRes.ok) {
+            const created = await upRes.json().catch(() => ({}));
+            out.writable = true;
+            await fetch(
+              `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+                created.id || ""
+              )}?supportsAllDrives=true`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${googleToken}` },
+                signal: AbortSignal.timeout(15000),
+              }
+            ).catch(() => null);
+          } else {
+            out.writeError = (await upRes.text().catch(() => "")) || `HTTP ${upRes.status}`;
+          }
+        } catch (err) {
+          out.writeError = String((err && err.message) || err);
+        }
+
+        // 4) 依据实测结果判定，并给出与该情形严格对应的修法
+        const errText = out.writeError || "";
+        if (out.writable) {
+          out.verdict = "writable";
+          out.remediation = ["当前配置可正常写入，无需处理。"];
+        } else if (
+          /Service Accounts do not have storage quota|storageQuotaExceeded|exceeded their Drive storage quota/i.test(
+            errText
+          )
+        ) {
+          if (out.target.isSharedDrive) {
+            out.verdict = "shared_drive_quota";
+            out.remediation = [
+              "目标目录位于共享云端硬盘内，但写入仍被配额拒绝。",
+              "请在云端硬盘中清理空间，或为组织升级 Google Workspace 存储额度。",
+              "同时确认服务账号是该共享硬盘的成员，且角色不低于「内容管理员」。",
+            ];
+          } else {
+            out.verdict = "personal_drive_sa_no_quota";
+            out.remediation = [
+              "目标目录位于个人网盘（My Drive）。Google Cloud 服务账号没有自己的存储配额，它在个人网盘中创建的任何文件都归服务账号所有，因此一定被拒绝 —— 这不是空间不足，而是平台限制。",
+              "修法：在 Google Workspace 中创建「共享云端硬盘」(Shared Drive)，把服务账号添加为成员（内容管理员及以上），然后把 TELEGRAM_UPLOAD_FOLDER_ID 指向该硬盘内的目录。",
+              "注意：共享云端硬盘需要 Google Workspace（企业版/教育版）账号。个人 Gmail 账号无法创建共享硬盘，因此服务账号直写个人网盘在任何配置下都不会成功。",
+            ];
+          }
+        } else if (/insufficientPermissions|forbidden|unauthorized|invalid_grant/i.test(errText)) {
+          out.verdict = "insufficient_permissions";
+          out.remediation = [
+            "服务账号对该目录没有写入权限。",
+            "请在 Google Drive 中把目标文件夹共享给服务账号：共享硬盘需授予「内容管理员」，个人网盘需授予「编辑者」。",
+          ];
+        } else {
+          out.verdict = "unknown";
+          out.remediation = ["未能判定写入失败原因，请把上述诊断结果提供给维护者。"];
+        }
+
+        return json({ success: true, ...out });
+      } catch (err) {
+        return json({ success: false, error: "存储能力诊断异常，请检查服务账号凭据" }, 502);
+      }
+    }
+
     // 注册/绑定当前站点的 Webhook
     if (action === "register") {
       try {

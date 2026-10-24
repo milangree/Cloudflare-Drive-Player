@@ -529,6 +529,50 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
 }
 ```
 
+#### 存储能力诊断 (`POST` 且 `action: "capability"`)
+
+区分写入失败的**真实原因**——三种成因的修法完全不同：个人网盘拒绝服务账号文件、共享硬盘空间不足、权限未授予。
+
+该探测会读取目标目录元信息（`driveId` **仅**对共享硬盘内的条目返回）、列出服务账号可访问的共享硬盘，随后真实写入 1 字节探针文件并立即删除，从而拿到 Google 的原始拒绝原因。
+
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "capability"}'
+```
+响应示例：
+```json
+{
+  "success": true,
+  "target": {
+    "folderId": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l",
+    "name": "我的媒体库",
+    "driveId": null,
+    "isSharedDrive": false
+  },
+  "sharedDrives": [],
+  "writable": false,
+  "writeError": "{\"error\":{\"errors\":[{\"reason\":\"storageQuotaExceeded\"...",
+  "verdict": "personal_drive_sa_no_quota",
+  "remediation": [
+    "目标目录位于个人网盘（My Drive）。Google Cloud 服务账号没有自己的存储配额……",
+    "修法：在 Google Workspace 中创建「共享云端硬盘」(Shared Drive)……",
+    "注意：共享云端硬盘需要 Google Workspace（企业版/教育版）账号……"
+  ]
+}
+```
+
+| `verdict` | 含义 | 处理 |
+| :--- | :--- | :--- |
+| `writable` | 可正常写入 | 无需处理 |
+| `personal_drive_sa_no_quota` | 目标位于个人网盘；上传文件归服务账号所有，而服务账号**无配额** | 将目标移入共享云端硬盘（需 Google Workspace） |
+| `shared_drive_quota` | 目标位于共享硬盘，但写入仍被配额拒绝 | 清理空间或升级组织存储额度；确认服务账号是成员 |
+| `insufficient_permissions` | 服务账号对该目录无写入权限 | 共享该目录：共享硬盘授「内容管理员」，个人网盘授「编辑者」 |
+| `unknown` | 未能判定原因 | 将诊断结果提供给维护者 |
+
+> **核心规则**：Google Cloud 服务账号**没有自己的存储配额**。它创建的任何文件都归服务账号所有，因此无论个人「我的云端硬盘」还剩多少空间，写入都会被拒绝。只有**共享云端硬盘**能给服务账号的上传提供归属——而共享云端硬盘需要 Google Workspace（企业版/教育版）账号。个人 Gmail 账号无法创建共享硬盘，因此在其上服务账号写入在任何配置下都不可能成功。
+
 #### 注销 Webhook (`DELETE`)
 ```bash
 curl -X DELETE https://cf-pages-drive-player.pages.dev/api/admin/telegram \

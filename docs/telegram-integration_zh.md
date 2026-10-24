@@ -92,12 +92,13 @@ curl -X POST https://<你的域名>/api/admin/telegram \
 
 ## 4. 验证链路
 
-提供两项只读诊断：
+提供三项只读诊断：
 
 | 动作 | 验证内容 |
 | :--- | :--- |
 | `{"action": "test"}` | Bot Token 有效且 Telegram 可达（调用 `getMe`）。 |
 | `{"action": "test-upload"}` | 完整写入路径可用：上传一个极小探针文件到目标目录后立即删除。 |
+| `{"action": "capability"}` | 写入失败的**真实原因**——区分个人网盘（服务账号无配额）、共享硬盘空间不足、权限未授予。 |
 
 ```bash
 curl -X POST https://<你的域名>/api/admin/telegram \
@@ -106,7 +107,24 @@ curl -X POST https://<你的域名>/api/admin/telegram \
   -d '{"action": "test-upload"}'
 ```
 
-若 `test-upload` 返回配额错误，说明服务账号自身没有存储空间——请把 `TELEGRAM_UPLOAD_FOLDER_ID` 指向**共享云端硬盘 (Shared Drive)**，并为该服务账号授予该目录的管理员权限。
+若 `test-upload` 返回配额错误，说明服务账号自身没有存储空间。运行 `capability` 诊断可确认属于三种情形中的哪一种：
+
+```bash
+curl -X POST https://<你的域名>/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "capability"}'
+```
+
+| `verdict` | 含义 | 处理 |
+| :--- | :--- | :--- |
+| `writable` | 可正常写入 | 无需处理 |
+| `personal_drive_sa_no_quota` | 目标位于个人网盘；上传文件归服务账号所有，而服务账号**无配额** | 将目标移入共享云端硬盘（需 Google Workspace） |
+| `shared_drive_quota` | 目标位于共享硬盘，但写入仍被配额拒绝 | 清理空间或升级组织存储额度；确认服务账号是成员 |
+| `insufficient_permissions` | 服务账号对该目录无写入权限 | 共享该目录：共享硬盘授「内容管理员」，个人网盘授「编辑者」 |
+| `unknown` | 未能判定原因 | 将诊断结果提供给维护者 |
+
+> **核心规则**：Google Cloud 服务账号**没有自己的存储配额**。它创建的任何文件都归服务账号所有，因此无论个人「我的云端硬盘」还剩多少空间，写入都会被拒绝。只有**共享云端硬盘**能给服务账号的上传提供归属——而共享云端硬盘需要 Google Workspace（企业版/教育版）账号。个人 Gmail 账号无法创建共享硬盘，因此在其上服务账号写入在任何配置下都不可能成功。
 
 ---
 

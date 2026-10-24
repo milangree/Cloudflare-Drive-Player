@@ -312,8 +312,10 @@ id = "6234abcd5678ef901234567890abcdef" # 替换为您真实的 KV Namespace ID
 - **原因分析**：
   - Google Cloud 的 Service Account（服务账号）本身是一个虚拟机器账号，**不附带独立的免费存储配额（Quota: 0）**。
 - **解决方案**：
-  - 若需直接向网盘写入文件，请将挂载的根文件夹放置于 **Google Workspace 共享云端硬盘 (Shared Drive)** 中，由组织配额承载存储；
+  - 若需通过应用直接写入，请将挂载的根文件夹放置于 **Google Workspace 共享云端硬盘 (Shared Drive)** 中，由组织配额承载存储；
+  - 共享云端硬盘需要 Google Workspace（企业版/教育版）账号。**个人 Gmail 账号无法创建共享硬盘**，因此在其上服务账号写入在任何配置下都不可能成功；
   - 或者在个人网盘网页端直接上传文件，系统将实时索引并呈现，无需消耗服务账号配额。
+- **确认你属于哪种情形**：使用后台的**诊断存储配额**按钮（或向 `/api/admin/telegram` 发送 `POST {"action":"capability"}`）。它会区分 `personal_drive_sa_no_quota` / `shared_drive_quota` / `insufficient_permissions` 并给出对应修法。详见 [telegram-integration_zh.md §4](docs/telegram-integration_zh.md#4-验证链路)。
 
 ---
 

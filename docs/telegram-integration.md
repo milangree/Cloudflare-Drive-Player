@@ -92,12 +92,13 @@ When `TELEGRAM_WEBHOOK_SECRET` is configured, the `secret_token` parameter is fo
 
 ## 4. Verifying the pipeline
 
-Two read-only diagnostics are available:
+Three read-only diagnostics are available:
 
 | Action | What it proves |
 | :--- | :--- |
 | `{"action": "test"}` | The Bot Token is valid and Telegram is reachable (calls `getMe`). |
 | `{"action": "test-upload"}` | The full write path works: it uploads a tiny probe file to the target folder, then deletes it immediately. |
+| `{"action": "capability"}` | *Why* writes fail — distinguishes a personal My Drive (service accounts have no quota), a full Shared Drive, and a missing grant. |
 
 ```bash
 curl -X POST https://<your-domain>/api/admin/telegram \
@@ -106,7 +107,24 @@ curl -X POST https://<your-domain>/api/admin/telegram \
   -d '{"action": "test-upload"}'
 ```
 
-A `test-upload` failure with a quota message means the service account has no storage of its own — point `TELEGRAM_UPLOAD_FOLDER_ID` at a **Shared Drive** and grant the service account manager rights on that folder.
+A `test-upload` failure with a quota message means the service account has no storage of its own. Run the `capability` diagnostic to confirm which of the three cases applies:
+
+```bash
+curl -X POST https://<your-domain>/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "capability"}'
+```
+
+| `verdict` | Meaning | Fix |
+| :--- | :--- | :--- |
+| `writable` | Writes succeed | Nothing to do |
+| `personal_drive_sa_no_quota` | Target is a personal My Drive; uploaded files are owned by the service account, which has **no quota** | Move the target into a Shared Drive (requires Google Workspace) |
+| `shared_drive_quota` | Target is a Shared Drive, but writes are still quota-rejected | Free space or upgrade the organization's storage; confirm the service account is a member |
+| `insufficient_permissions` | The service account cannot write to the folder | Share the folder: Content Manager on a Shared Drive, Editor on a personal drive |
+| `unknown` | No cause determined | Forward the diagnostic output |
+
+> **The core rule**: Google Cloud service accounts have **no storage quota of their own**. Any file they create is owned by the service account, so writing into a personal "My Drive" is rejected no matter how much free space that drive has. Only a **Shared Drive** gives service-account uploads somewhere to live — and Shared Drives require a Google Workspace (business/education) account. A personal Gmail account cannot create one, so service-account uploads are impossible on it under any configuration.
 
 ---
 

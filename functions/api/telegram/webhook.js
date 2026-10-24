@@ -93,7 +93,7 @@ const ERROR_MESSAGES = {
   FILE_TOO_LARGE:
     "文件超过 Telegram Bot API 的 20MB 上限，无法通过机器人转存。请压缩文件或改用其它方式上传。",
   DRIVE_QUOTA:
-    "Google Drive 存储配额不足。请将目标目录设为共享云端硬盘 (Shared Drive)，或在网盘中授予该服务账号对共享目录的管理特权。",
+    "Google Drive 存储配额不足，无法写入。Google Cloud 服务账号没有独立存储配额，不能写入个人网盘（My Drive）。请在 Google Workspace 中创建「共享云端硬盘」，把服务账号加为成员，并在后台把转存目标目录改为该硬盘内的文件夹。",
   DRIVE_AUTH: "Google Drive 授权失败，请检查服务账号凭据配置是否正确。",
   DRIVE_UPLOAD_FAILED: "Google Drive 上传失败，请稍后重试。",
   UNKNOWN: "转存失败，请稍后重试。",

@@ -541,10 +541,23 @@
                   <i data-lucide="upload-cloud" class="w-3 h-3"></i>
                   <span>测试转存链路</span>
                 </button>
+                <button type="button" id="btn-diagnose-storage" class="px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700 text-xs font-medium transition-colors flex items-center gap-1">
+                  <i data-lucide="stethoscope" class="w-3 h-3"></i>
+                  <span>诊断存储配额</span>
+                </button>
                 <button type="button" id="btn-unregister-tg-webhook" class="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-medium transition-colors flex items-center gap-1">
                   <i data-lucide="trash-2" class="w-3 h-3"></i>
                   <span>注销 Webhook</span>
                 </button>
+              </div>
+              <!-- 存储能力诊断结果 -->
+              <div id="tg-storage-diagnosis" class="hidden rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5 space-y-1.5">
+                <p class="text-[10px] font-semibold text-slate-300 flex items-center gap-1.5">
+                  <i data-lucide="activity" class="w-3 h-3 text-brand-400"></i>
+                  存储能力诊断
+                </p>
+                <p class="text-[10px] font-mono text-slate-400" id="tg-diagnosis-verdict">未运行</p>
+                <ul class="text-[10px] text-slate-400 leading-relaxed list-disc list-inside space-y-0.5" id="tg-diagnosis-remediation"></ul>
               </div>
             </div>
           </div>

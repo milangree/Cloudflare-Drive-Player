@@ -90,6 +90,10 @@ const dom = {
   tgWebhookDetail: document.getElementById("tg-webhook-detail"),
   btnTestTgConnection: document.getElementById("btn-test-tg-connection"),
   btnTestTgUpload: document.getElementById("btn-test-tg-upload"),
+  btnDiagnoseStorage: document.getElementById("btn-diagnose-storage"),
+  tgStorageDiagnosis: document.getElementById("tg-storage-diagnosis"),
+  tgDiagnosisVerdict: document.getElementById("tg-diagnosis-verdict"),
+  tgDiagnosisRemediation: document.getElementById("tg-diagnosis-remediation"),
   btnUnregisterTgWebhook: document.getElementById("btn-unregister-tg-webhook"),
   adminLogoutBtn: document.getElementById("admin-logout-btn"),
   // 单个文件操作模态框 (保留用于单项重命名/移动)
@@ -3880,6 +3884,72 @@ function setupEventListeners() {
       } finally {
         dom.btnTestTgUpload.disabled = false;
         dom.btnTestTgUpload.innerHTML = original;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
+  // Telegram：存储能力诊断（区分个人网盘 / 共享硬盘配额 / 权限不足）
+  if (dom.btnDiagnoseStorage) {
+    const VERDICT_LABELS = {
+      writable: "✅ 可写入：当前配置正常",
+      personal_drive_sa_no_quota: "❌ 个人网盘（My Drive）：服务账号无存储配额",
+      shared_drive_quota: "❌ 共享云端硬盘：配额不足",
+      insufficient_permissions: "❌ 权限不足：服务账号无法写入目标目录",
+      unknown: "⚠️ 未能判定",
+    };
+    const escapeHtml = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    dom.btnDiagnoseStorage.addEventListener("click", async () => {
+      dom.btnDiagnoseStorage.disabled = true;
+      const original = dom.btnDiagnoseStorage.innerHTML;
+      dom.btnDiagnoseStorage.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>诊断中...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+      try {
+        const res = await fetch("/api/admin/telegram", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${state.adminToken}`,
+          },
+          body: JSON.stringify({ action: "capability" }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          showToast("❌ " + (data.error || "诊断失败"));
+          return;
+        }
+
+        const panel = dom.tgStorageDiagnosis;
+        const verdictEl = dom.tgDiagnosisVerdict;
+        const listEl = dom.tgDiagnosisRemediation;
+        if (panel) panel.classList.remove("hidden");
+        if (verdictEl) {
+          const label = VERDICT_LABELS[data.verdict] || `⚠️ ${data.verdict}`;
+          const target = data.target || {};
+          const driveInfo = target.isSharedDrive
+            ? `共享硬盘（driveId: ${target.driveId}）`
+            : "个人网盘（My Drive）";
+          verdictEl.textContent = `${label}\n目标目录: ${target.folderId} (${target.name || "未知名称"}, ${driveInfo})`;
+          verdictEl.classList.add("whitespace-pre-line");
+        }
+        if (listEl) {
+          listEl.innerHTML = (data.remediation || [])
+            .map((item) => `<li>${escapeHtml(item)}</li>`)
+            .join("");
+        }
+        // 诊断结论同时进 toast，便于远程协助时直接截图
+        showToast(`存储诊断: ${VERDICT_LABELS[data.verdict] || data.verdict}`);
+      } catch (err) {
+        showToast("诊断失败: " + err.message);
+      } finally {
+        dom.btnDiagnoseStorage.disabled = false;
+        dom.btnDiagnoseStorage.innerHTML = original;
         if (window.lucide) window.lucide.createIcons();
       }
     });

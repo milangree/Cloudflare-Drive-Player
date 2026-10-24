@@ -444,3 +444,188 @@ test("telegram webhook: 上传成功后写入 KV 幂等键", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+// ---------------------------------------------------------------------------
+// 存储能力诊断（action: "capability"）
+// 服务账号配额问题在不同账号类型下修法完全不同，必须实测区分而非猜测。
+// ---------------------------------------------------------------------------
+
+/** 生成管理员 Token（默认口令 admin） */
+async function makeAdminToken() {
+  const mod = await importModule(join(FUNCTIONS_DIR, "utils/configManager.js"));
+  return mod.generateToken({ role: "admin" }, "admin");
+}
+
+/** 按场景构造 admin/telegram 的 fetch mock */
+function mockDriveForCapability({ targetDriveId = null, uploadStatus = 403, uploadBody = "" }) {
+  return async (url, options = {}) => {
+    const u = String(url);
+    if (u.includes("oauth2.googleapis.com/token")) {
+      return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+    }
+    if (u.includes("uploadType=multipart")) {
+      if (uploadStatus >= 200 && uploadStatus < 300) {
+        return new Response(JSON.stringify({ id: "PROBE_FILE_1", name: ".capability-probe.txt" }), {
+          status: uploadStatus,
+        });
+      }
+      return new Response(uploadBody, { status: uploadStatus });
+    }
+    if (u.includes("drive/v3/drives")) {
+      return new Response(JSON.stringify({ drives: [] }), { status: 200 });
+    }
+    if (u.includes("drive/v3/files/root")) {
+      return new Response(JSON.stringify({ id: "root", properties: {} }), { status: 200 });
+    }
+    if (u.includes("drive/v3/files/1PERSONAL")) {
+      // driveId 仅存在于共享硬盘内的条目 —— 个人网盘不返回该字段
+      const meta = { id: "1PERSONAL", name: "我的媒体库", mimeType: "application/vnd.google-apps.folder" };
+      if (targetDriveId) meta.driveId = targetDriveId;
+      return new Response(JSON.stringify(meta), { status: 200 });
+    }
+    if (options.method === "DELETE") {
+      return new Response("", { status: 204 });
+    }
+    if (u.includes("drive/v3/files?")) {
+      return new Response(JSON.stringify({ id: "root", properties: {} }), { status: 200 });
+    }
+    throw new Error(`mock fetch 未覆盖: ${options.method || "GET"} ${u}`);
+  };
+}
+
+test("capability: 个人网盘 + 服务账号无配额 → 判定 personal_drive_sa_no_quota", async () => {
+  const { onRequest } = await importModule(join(FUNCTIONS_DIR, "api/admin/telegram.js"));
+  const token = await makeAdminToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockDriveForCapability({
+    uploadStatus: 403,
+    uploadBody: JSON.stringify({
+      error: {
+        errors: [{ reason: "storageQuotaExceeded", message: "Service Accounts do not have storage quota." }],
+        code: 403,
+      },
+    }),
+  });
+
+  try {
+    const request = new Request("https://example.com/api/admin/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "capability" }),
+    });
+    const context = {
+      request,
+      env: {
+        ADMIN_PASSWORD: "admin",
+        TELEGRAM_BOT_TOKEN: "123456:TEST",
+        TELEGRAM_UPLOAD_FOLDER_ID: "1PERSONAL",
+        SERVICE_ACCOUNT_JSON: await makeTestServiceAccount(),
+      },
+      params: {},
+      url: new URL("https://example.com/api/admin/telegram"),
+    };
+
+    const resp = await onRequest(context);
+    assert.equal(resp.status, 200);
+    const body = await resp.json();
+    assert.equal(body.success, true);
+    assert.equal(body.target.isSharedDrive, false, "个人网盘不得返回 driveId");
+    assert.equal(body.writable, false);
+    assert.equal(body.verdict, "personal_drive_sa_no_quota");
+    assert.ok(
+      body.remediation.some((t) => t.includes("共享云端硬盘")),
+      "必须给出共享云端硬盘修法"
+    );
+    assert.ok(
+      body.remediation.some((t) => t.includes("个人 Gmail") || t.includes("Workspace")),
+      "必须说明个人账号无法创建共享硬盘"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("capability: 写入成功 → 判定 writable 且清理探针文件", async () => {
+  const { onRequest } = await importModule(join(FUNCTIONS_DIR, "api/admin/telegram.js"));
+  const token = await makeAdminToken();
+  let deletedUrl = null;
+  const mock = mockDriveForCapability({ uploadStatus: 200 });
+  const wrapped = async (url, options = {}) => {
+    if (options.method === "DELETE") deletedUrl = String(url);
+    return mock(url, options);
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = wrapped;
+
+  try {
+    const request = new Request("https://example.com/api/admin/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "capability" }),
+    });
+    const context = {
+      request,
+      env: {
+        ADMIN_PASSWORD: "admin",
+        TELEGRAM_BOT_TOKEN: "123456:TEST",
+        TELEGRAM_UPLOAD_FOLDER_ID: "1PERSONAL",
+        SERVICE_ACCOUNT_JSON: await makeTestServiceAccount(),
+      },
+      params: {},
+      url: new URL("https://example.com/api/admin/telegram"),
+    };
+
+    const resp = await onRequest(context);
+    const body = await resp.json();
+    assert.equal(resp.status, 200);
+    assert.equal(body.writable, true);
+    assert.equal(body.verdict, "writable");
+    assert.ok(deletedUrl && deletedUrl.includes("PROBE_FILE_1"), "诊断后必须清理探针文件");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("capability: 权限不足 → 判定 insufficient_permissions（不与配额混淆）", async () => {
+  const { onRequest } = await importModule(join(FUNCTIONS_DIR, "api/admin/telegram.js"));
+  const token = await makeAdminToken();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockDriveForCapability({
+    targetDriveId: "0ASHAREDDDRIVE",
+    uploadStatus: 403,
+    uploadBody: JSON.stringify({
+      error: { errors: [{ reason: "insufficientPermissions", message: "Insufficient permissions" }], code: 403 },
+    }),
+  });
+
+  try {
+    const request = new Request("https://example.com/api/admin/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "capability" }),
+    });
+    const context = {
+      request,
+      env: {
+        ADMIN_PASSWORD: "admin",
+        TELEGRAM_BOT_TOKEN: "123456:TEST",
+        TELEGRAM_UPLOAD_FOLDER_ID: "1PERSONAL",
+        SERVICE_ACCOUNT_JSON: await makeTestServiceAccount(),
+      },
+      params: {},
+      url: new URL("https://example.com/api/admin/telegram"),
+    };
+
+    const resp = await onRequest(context);
+    const body = await resp.json();
+    assert.equal(resp.status, 200);
+    assert.equal(body.target.isSharedDrive, true, "共享硬盘条目必须返回 driveId");
+    assert.equal(body.verdict, "insufficient_permissions");
+    assert.ok(
+      body.remediation.some((t) => t.includes("权限")),
+      "必须给出权限修法"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

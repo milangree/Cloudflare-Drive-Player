@@ -313,7 +313,9 @@ To allow Cloudflare Pages to access your Google Drive, create a service account 
   - Google Cloud Service Accounts are virtual machine identities with **0 GB of dedicated free storage quota**.
 - **Solutions**:
   - If you need write capabilities directly via the app, place your root folder inside a **Google Workspace Shared Drive**, which draws from enterprise organization storage.
+  - Shared Drives require a Google Workspace (business/education) account. A **personal Gmail account cannot create one**, so service-account uploads are impossible on it under any configuration.
   - Alternatively, upload files directly via the Google Drive web interface; the application will index them in real time.
+- **Confirm which case you are in**: use the admin panel's **诊断存储配额** button (or `POST {"action":"capability"}` to `/api/admin/telegram`). It distinguishes `personal_drive_sa_no_quota` / `shared_drive_quota` / `insufficient_permissions` and prints the matching fix. See [telegram-integration.md §4](docs/telegram-integration.md#4-verifying-the-pipeline).
 
 ---
 

@@ -530,6 +530,50 @@ Response:
 }
 ```
 
+#### Storage Capability Diagnostic (`POST` with `action: "capability"`)
+
+Distinguishes *why* writes fail, because the three causes need completely different fixes: a personal My Drive that rejects service-account files, a Shared Drive that is out of space, and a missing grant.
+
+The probe reads the target folder's metadata (`driveId` is returned **only** for items inside a Shared Drive), lists the Shared Drives the service account can access, then performs a real 1-byte write and deletes it immediately, capturing Google's raw refusal reason.
+
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "capability"}'
+```
+Response:
+```json
+{
+  "success": true,
+  "target": {
+    "folderId": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l",
+    "name": "我的媒体库",
+    "driveId": null,
+    "isSharedDrive": false
+  },
+  "sharedDrives": [],
+  "writable": false,
+  "writeError": "{\"error\":{\"errors\":[{\"reason\":\"storageQuotaExceeded\"...",
+  "verdict": "personal_drive_sa_no_quota",
+  "remediation": [
+    "目标目录位于个人网盘（My Drive）。Google Cloud 服务账号没有自己的存储配额……",
+    "修法：在 Google Workspace 中创建「共享云端硬盘」(Shared Drive)……",
+    "注意：共享云端硬盘需要 Google Workspace（企业版/教育版）账号……"
+  ]
+}
+```
+
+| `verdict` | Meaning | Fix |
+| :--- | :--- | :--- |
+| `writable` | Writes succeed | Nothing to do |
+| `personal_drive_sa_no_quota` | Target is a personal My Drive; uploaded files are owned by the service account, which has **no quota** | Move the target into a Shared Drive (requires Google Workspace) |
+| `shared_drive_quota` | Target is a Shared Drive, but writes are still quota-rejected | Free space or upgrade the organization's storage; confirm the service account is a member |
+| `insufficient_permissions` | The service account cannot write to the folder | Share the folder: Content Manager on a Shared Drive, Editor on a personal drive |
+| `unknown` | No cause determined | Forward the diagnostic output |
+
+> **The core rule**: Google Cloud service accounts have **no storage quota of their own**. Any file they create is owned by the service account, so writing into a personal "My Drive" is rejected no matter how much free space that drive has. Only a **Shared Drive** gives service-account uploads somewhere to live — and Shared Drives require a Google Workspace (business/education) account. A personal Gmail account cannot create one, so service-account uploads are impossible on it under any configuration.
+
 #### Remove Webhook (`DELETE`)
 ```bash
 curl -X DELETE https://cf-pages-drive-player.pages.dev/api/admin/telegram \
