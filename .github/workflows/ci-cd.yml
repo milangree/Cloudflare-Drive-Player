@@ -34,6 +34,13 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Offline Functions Bundle Gate (wrangler)
+        # 打包期闸门：npm run test:syntax 只做 node --check 的 AST 语法解析，
+        # 不解析 import 说明符，相对路径写错要到 wrangler 打包阶段才会暴露
+        # （参见 run 39885824930：functions/api/telegram/webhook.js 导入层级错误）。
+        # 该步骤完全离线执行，不需要任何 Cloudflare 凭据，也不会触发部署。
+        run: npx wrangler pages functions build --outdir="$RUNNER_TEMP/functions-build"
+
       - name: Run JavaScript Syntax & Static Check
         run: npm run test:syntax
 

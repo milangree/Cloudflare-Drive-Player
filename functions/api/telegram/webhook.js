@@ -1,5 +1,5 @@
-import { getAccessToken, getCredentials } from "../utils/googleAuth.js";
-import { getSystemConfig } from "../utils/configManager.js";
+import { getAccessToken, getCredentials } from "../../utils/googleAuth.js";
+import { getSystemConfig } from "../../utils/configManager.js";
 
 /**
  * Telegram Bot Webhook 处理器
