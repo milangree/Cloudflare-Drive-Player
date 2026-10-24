@@ -28,10 +28,13 @@ This document provides complete API endpoint specifications and reproducible req
   - [2. Directory Indexing & Search (`GET /api/list`)](#2-directory-indexing--search-get-apilist)
   - [3. Media Streaming & Range Proxy (`GET/HEAD/OPTIONS /api/stream/:id`)](#3-media-streaming--range-proxy-getheadoptions-apistreamid)
   - [4. Original File Download (`GET /api/download/:id`)](#4-original-file-download-get-apidownloadid)
+  - [8. Telegram Media Transfer Webhook (`GET/POST /api/telegram/webhook`)](#8-telegram-media-transfer-webhook-getpost-apitelegramwebhook)
+  - [9. File Metadata by ID (`GET /api/meta/:id`)](#9-file-metadata-by-id-get-apimetapid)
 - [Protected & Administration Endpoints](#protected--administration-endpoints)
   - [5. Authentication & Token Issuance (`POST /api/admin/auth`)](#5-authentication--token-issuance-post-apiadminauth)
   - [6. System Configuration (`GET/POST /api/admin/config`)](#6-system-configuration-getpost-apiadminconfig)
   - [7. File Lifecycle Operations (`POST /api/admin/files`)](#7-file-lifecycle-operations-post-apiadminfiles)
+  - [10. Telegram Webhook Management (`GET/POST/DELETE /api/admin/telegram`)](#10-telegram-webhook-management-getpostdelete-apiadmintelegram)
 
 ---
 
@@ -236,6 +239,86 @@ Triggers browser native file download dialogues with strict RFC 5987 internation
 
 ---
 
+### 8. Telegram Media Transfer Webhook (`GET/POST /api/telegram/webhook`)
+
+Receives media and files sent by Telegram users and transfers them into Google Drive via the official Drive API.
+
+- **Methods**: `GET` (liveness probe), `POST` (Telegram update delivery)
+- **Path**: `/api/telegram/webhook`
+
+#### Source Verification (optional but strongly recommended)
+
+When `TELEGRAM_WEBHOOK_SECRET` is configured, every `POST` must carry the matching header, otherwise **HTTP 401** is returned:
+
+```http
+X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>
+```
+
+#### Update Payload Handling
+
+| Scenario | Response |
+| :--- | :--- |
+| Bot Token not configured | `200` + `{"ok":false,"error":"Telegram Bot Token 未配置"}` |
+| Body is not valid JSON | `400` + `Invalid JSON` |
+| Not a `message` / `channel_post` update | `200` + `{"ok":true,"ignored":true}` |
+| `/start` or `/help` | `200` + `{"ok":true}` (no allowlist check — informational only) |
+| Sender not in allowlist | `200` + `{"ok":true,"denied":true}` |
+| No media and no text | `200` + `{"ok":true,"ignored":"no_media"}` |
+| Declared size > 20 MB | `200` + `{"ok":true,"ignored":"too_large"}` |
+| Transfer completed | `200` + `{"ok":true,"fileId":"..."}` |
+| Already transferred (idempotent) | `200` + `{"ok":true,"deduped":true,"fileId":"..."}` |
+| Transient failure (Telegram/Drive unreachable, 5xx, 429) | `502` + `{"ok":false,"error":"<fixed Chinese message>"}` |
+| Permanent failure (quota, auth, invalid path) | `200` + `{"ok":true}` |
+
+> **Design notes**
+> - The **20 MB ceiling** comes from Telegram's Bot API `getFile` limit, so files larger than this cannot be fetched through the bot at all. The check is applied *before* any outbound request.
+> - **Allowlist is fail-closed**: when the allowlist is empty, all upload requests are denied. Text commands still respond so users can discover what to do.
+> - **Idempotency** uses a Drive `appProperties` key (`cfTgFileUniqueId`) derived from Telegram's `file_unique_id`, so a Telegram retry does not create a duplicate file.
+> - Raw error text is **never** echoed to the user; only fixed Chinese messages are sent, and the original error goes to logs.
+
+---
+
+### 9. File Metadata by ID (`GET /api/meta/:id`)
+
+Resolves a single file by ID without needing to know which folder contains it. Powers Telegram deep links (`?file=<id>`).
+
+- **Method**: `GET`
+- **Path**: `/api/meta/:id`
+- **Path Parameters**:
+  | Parameter | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `id` | string | Yes | Google Drive file ID |
+- **Query Parameters**:
+  | Parameter | Type | Required | Description |
+  | :--- | :--- | :---: | :--- |
+  | `token` | string | No | Access token when password protection is active |
+- **Example Request**:
+  ```bash
+  curl -X GET "https://cf-pages-drive-player.pages.dev/api/meta/1ABC999VideoId"
+  ```
+- **Success Response (HTTP 200)**:
+  ```json
+  {
+    "success": true,
+    "item": {
+      "id": "1ABC999VideoId",
+      "name": "Inception.mkv",
+      "mimeType": "video/x-matroska",
+      "size": 3221225472,
+      "parents": ["1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l"],
+      "thumbnailLink": "https://lh3.googleusercontent.com/...",
+      "modifiedTime": "2026-10-15T12:00:00.000Z",
+      "isFolder": false,
+      "isVideo": true,
+      "isAudio": false,
+      "isImage": false
+    }
+  }
+  ```
+- **Error Responses**: `401` (password protection active, no valid token), `404` (file not found), `500`/`502` (Drive request failed) — all return JSON with a `success: boolean` field.
+
+---
+
 ## Protected & Administration Endpoints
 
 ### 5. Authentication & Token Issuance (`POST /api/admin/auth`)
@@ -364,4 +447,91 @@ Response:
     "name": "Inception.DirectorCut.2010.mkv"
   }
 }
+```
+
+---
+
+### 10. Telegram Webhook Management (`GET/POST/DELETE /api/admin/telegram`)
+
+Manages the Telegram webhook registration and runs diagnostics. All routes require an administrator Bearer Token.
+
+- **Header**: `Authorization: Bearer <ADMIN_TOKEN>`
+
+#### Query Webhook Status (`GET`)
+```bash
+curl -X GET https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+Response:
+```json
+{
+  "success": true,
+  "webhookActive": true,
+  "url": "https://cf-pages-drive-player.pages.dev/api/telegram/webhook",
+  "pendingUpdateCount": 0,
+  "lastErrorMessage": "",
+  "lastErrorDate": null,
+  "hasCustomCertificate": false,
+  "maxConnections": 40
+}
+```
+
+#### Register Webhook (`POST` with `action: "register"`)
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "register"}'
+```
+Response:
+```json
+{
+  "success": true,
+  "message": "Telegram Webhook 自动注册成功！",
+  "webhookUrl": "https://cf-pages-drive-player.pages.dev/api/telegram/webhook",
+  "secretTokenConfigured": true,
+  "webhookActive": true,
+  "pendingUpdateCount": 0
+}
+```
+> `secret_token` is forwarded automatically **only when** `TELEGRAM_WEBHOOK_SECRET` is configured, so the webhook URL stays private.
+
+#### Test Bot Connection (`POST` with `action: "test"`)
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "test"}'
+```
+Response:
+```json
+{
+  "success": true,
+  "botUsername": "my_drive_bot",
+  "botFirstName": "Drive Transfer",
+  "botId": 1234567890
+}
+```
+
+#### End-to-End Transfer Probe (`POST` with `action: "test-upload"`)
+Uploads a tiny probe file to the configured target folder and deletes it immediately, verifying credentials, quota, and write permission.
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "test-upload"}'
+```
+Response:
+```json
+{
+  "success": true,
+  "probeFileId": "1ProbeFileId",
+  "targetFolderId": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l"
+}
+```
+
+#### Remove Webhook (`DELETE`)
+```bash
+curl -X DELETE https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>"
 ```

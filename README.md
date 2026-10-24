@@ -34,6 +34,7 @@
   - [2.8 Minimalist Dark Mode Viewport](#28-minimalist-dark-mode-viewport)
   - [2.9 Admin Panel & Lifecycle File Operations](#29-admin-panel--lifecycle-file-operations)
   - [2.10 Multi-Drive Mounting & Shortcut Passthrough](#210-multi-drive-mounting--shortcut-passthrough)
+  - [2.11 Telegram Media Transfer Bot](#211-telegram-media-transfer-bot)
 - [3. Quick Start (5-Minute Deployment)](#3-quick-start-5-minute-deployment)
   - [3.1 Cloudflare Pages One-Click Setup](#31-cloudflare-pages-one-click-setup)
   - [3.2 Environment Variables Reference](#32-environment-variables-reference)
@@ -49,6 +50,7 @@
   - [Q4: Does running without KV affect persistence? How does 3-tier storage work?](#q4-does-running-without-kv-affect-persistence-how-does-3-tier-storage-work)
   - [Q5: "Quota: 0" or storageQuotaExceeded error when uploading files?](#q5-quota-0-or-storagequotaexceeded-error-when-uploading-files)
   - [Q6: How do I launch external players (PotPlayer, IINA, VLC, Infuse, MPV)?](#q6-how-do-i-launch-external-players-potplayer-iina-vlc-infuse-mpv)
+  - [Q7: Telegram bot returns 401 / 无操作权限 / 20MB limit?](#q7-telegram-bot-returns-401--无操作权限--20mb-limit)
 - [6. Architecture Overview](#6-architecture-overview)
 - [7. Local Development & Quality Gates](#7-local-development--quality-gates)
 - [8. Documentation Index & Acknowledgements](#8-documentation-index--acknowledgements)
@@ -127,6 +129,18 @@ Web browsers have limited native support for HEVC/H.265 10-bit, MKV containers, 
 ### 2.10 Multi-Drive Mounting & Shortcut Passthrough
 - Supports mounting both personal "My Drive" folders and Google Workspace "Shared Drives".
 - **Google Drive Shortcut Passthrough**: Leverages Google Drive's native "Add Shortcut" feature to consolidate folders from multiple drives or external accounts into a single root folder. The backend transparently follows target IDs.
+
+---
+
+### 2.11 Telegram Media Transfer Bot
+- Forward any **video, audio, document, photo, or voice message** straight from Telegram into your Google Drive via the official Drive API — the bot relays the transfer at the edge.
+- **Secret-token source verification**: when `TELEGRAM_WEBHOOK_SECRET` is set, every delivery must carry the matching `X-Telegram-Bot-Api-Secret-Token` header (constant-time comparison); mismatches get **401**.
+- **Fail-closed allowlist**: an empty allowlist denies all uploads, so a publicly reachable endpoint can never be abused by strangers.
+- **20 MB ceiling, checked first**: Telegram's `getFile` limit is enforced *before* any outbound request.
+- **Idempotent transfers**: keyed on Telegram's `file_unique_id` (stored in Drive `appProperties`), so a Telegram retry never creates a duplicate file.
+- **Deep links**: successful transfers return an in-site link (`?file=<id>`) plus a direct download URL.
+- **Self-diagnostics**: test Bot connectivity and run an end-to-end upload probe from the admin panel.
+- Full guide: [docs/telegram-integration.md](docs/telegram-integration.md)
 
 ---
 
@@ -317,6 +331,19 @@ The player header includes an external player menu supporting the following prot
 | **Android ExoPlayer** | `intent:<StreamUrl>#Intent;action=android.intent.action.VIEW;type=video/*;end` | Android Phone / Tablet / TV |
 
 > **Note**: When site-wide visitor password protection is enabled, the external player URL automatically appends `?token=<token>` so streams authenticate seamlessly.
+
+---
+
+### Q7: Telegram bot returns 401 / 无操作权限 / 20MB limit?
+
+| Symptom | Cause | Fix |
+| :--- | :--- | :--- |
+| Bot replies `无操作权限` | Sender is not in the allowlist | Add the numeric ID or `@username` to `TELEGRAM_ALLOWED_USERS` |
+| Bot is silent on every file | Allowlist is empty (**fail-closed**) | Fill in `TELEGRAM_ALLOWED_USERS` |
+| Telegram reports `last_error_message` | Secret mismatch or unreachable URL | Confirm `TELEGRAM_WEBHOOK_SECRET` matches on both sides; confirm the URL is public |
+| `文件过大` on a 25 MB file | Telegram's 20 MB `getFile` limit | Compress/split the file, or upload it directly to Drive |
+| Duplicate files after a retry | Idempotency key not stored | Confirm `appProperties` writes are allowed on the target folder |
+| Quota error on upload | Service account has no own storage | Target a Shared Drive and grant manager rights |
 
 ---
 

@@ -28,10 +28,13 @@
   - [2. 目录文件索引与搜索 (`GET /api/list`)](#2-目录文件索引与搜索-get-apilist)
   - [3. 媒体流式代理与分片播放 (`GET/HEAD/OPTIONS /api/stream/:id`)](#3-媒体流式代理与分片播放-getheadoptions-apistreamid)
   - [4. 文件原生下载 (`GET /api/download/:id`)](#4-文件原生下载-get-apidownloadid)
+- [8. Telegram 媒体转存 Webhook (`GET/POST /api/telegram/webhook`)](#8-telegram-媒体转存-webhook-getpost-apitelegramwebhook)
+- [9. 按 ID 查询文件元数据 (`GET /api/meta/:id`)](#9-按-id-查询文件元数据-get-apimetapid)
 - [前台密码验证与后台管理接口](#前台密码验证与后台管理接口)
   - [5. 身份认证与 Token 颁发 (`POST /api/admin/auth`)](#5-身份认证与-token-颁发-post-apiadminauth)
   - [6. 系统配置读取与更新 (`GET/POST /api/admin/config`)](#6-系统配置读取与更新-getpost-apiadminconfig)
   - [7. 云盘文件在线管理 (`POST /api/admin/files`)](#7-云盘文件在线管理-post-apiadminfiles)
+- [10. Telegram Webhook 管理 (`GET/POST/DELETE /api/admin/telegram`)](#10-telegram-webhook-管理-getpostdelete-apiadmintelegram)
 
 ---
 
@@ -236,6 +239,86 @@
 
 ---
 
+### 8. Telegram 媒体转存 Webhook (`GET/POST /api/telegram/webhook`)
+
+接收 Telegram 用户发送的媒体与文件，通过 Google Drive 官方 API 转存至指定目录。
+
+- **方法**：`GET`（存活探针）、`POST`（Telegram 投递更新）
+- **路径**：`/api/telegram/webhook`
+
+#### 来源校验（可选但强烈建议）
+
+配置 `TELEGRAM_WEBHOOK_SECRET` 后，每次 `POST` 都必须携带匹配的请求头，否则返回 **HTTP 401**：
+
+```http
+X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET>
+```
+
+#### 更新载荷处理
+
+| 场景 | 响应 |
+| :--- | :--- |
+| 未配置 Bot Token | `200` + `{"ok":false,"error":"Telegram Bot Token 未配置"}` |
+| 请求体非合法 JSON | `400` + `Invalid JSON` |
+| 非 `message` / `channel_post` 更新 | `200` + `{"ok":true,"ignored":true}` |
+| `/start` 或 `/help` | `200` + `{"ok":true}`（不校验白名单，仅供信息展示） |
+| 发送者不在白名单 | `200` + `{"ok":true,"denied":true}` |
+| 无媒体且无文本 | `200` + `{"ok":true,"ignored":"no_media"}` |
+| 声明大小 > 20 MB | `200` + `{"ok":true,"ignored":"too_large"}` |
+| 转存完成 | `200` + `{"ok":true,"fileId":"..."}` |
+| 已转存过（幂等） | `200` + `{"ok":true,"deduped":true,"fileId":"..."}` |
+| 瞬时故障（Telegram/Drive 不可达、5xx、429） | `502` + `{"ok":false,"error":"<固定中文文案>"}` |
+| 永久故障（配额、授权、路径无效） | `200` + `{"ok":true}` |
+
+> **设计说明**
+> - **20 MB 上限**来自 Telegram Bot API 的 `getFile` 限制，超限文件根本无法经机器人拉取，因此校验前置到任何出站请求之前。
+> - **白名单 fail-closed**：白名单留空时拒绝所有上传请求；文本指令仍响应，便于用户自助发现配置方式。
+> - **幂等**：以 Drive `appProperties` 键（`cfTgFileUniqueId`，取自 Telegram `file_unique_id`）去重，Telegram 重推不会产生重复文件。
+> - 原始错误文本**绝不**回吐给用户，只发送固定中文文案，原始错误仅入日志。
+
+---
+
+### 9. 按 ID 查询文件元数据 (`GET /api/meta/:id`)
+
+按 ID 直接定位单个文件，无需知道其所在目录。支撑 Telegram 深链（`?file=<id>`）。
+
+- **方法**：`GET`
+- **路径**：`/api/meta/:id`
+- **路径参数**：
+  | 参数 | 类型 | 必填 | 说明 |
+  | :--- | :--- | :---: | :--- |
+  | `id` | string | 是 | Google Drive 文件 ID |
+- **查询参数**：
+  | 参数 | 类型 | 必填 | 说明 |
+  | :--- | :--- | :---: | :--- |
+  | `token` | string | 否 | 开启密码保护时的访问令牌 |
+- **示例请求**：
+  ```bash
+  curl -X GET "https://cf-pages-drive-player.pages.dev/api/meta/1ABC999VideoId"
+  ```
+- **成功响应 (HTTP 200)**：
+  ```json
+  {
+    "success": true,
+    "item": {
+      "id": "1ABC999VideoId",
+      "name": "Inception.mkv",
+      "mimeType": "video/x-matroska",
+      "size": 3221225472,
+      "parents": ["1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l"],
+      "thumbnailLink": "https://lh3.googleusercontent.com/...",
+      "modifiedTime": "2026-10-15T12:00:00.000Z",
+      "isFolder": false,
+      "isVideo": true,
+      "isAudio": false,
+      "isImage": false
+    }
+  }
+  ```
+- **错误响应**：`401`（开启密码保护且无有效令牌）、`404`（文件不存在）、`500`/`502`（Drive 请求失败）——均返回含 `success` 布尔字段的 JSON。
+
+---
+
 ## 前台密码验证与后台管理接口
 
 ### 5. 身份认证与 Token 颁发 (`POST /api/admin/auth`)
@@ -363,4 +446,91 @@ curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/files \
     "name": "Inception.DirectorCut.2010.mkv"
   }
 }
+```
+
+---
+
+### 10. Telegram Webhook 管理 (`GET/POST/DELETE /api/admin/telegram`)
+
+管理 Telegram Webhook 注册并执行诊断。所有路由均需管理员 Bearer Token。
+
+- **请求头**：`Authorization: Bearer <ADMIN_TOKEN>`
+
+#### 查询 Webhook 状态 (`GET`)
+```bash
+curl -X GET https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+响应示例：
+```json
+{
+  "success": true,
+  "webhookActive": true,
+  "url": "https://cf-pages-drive-player.pages.dev/api/telegram/webhook",
+  "pendingUpdateCount": 0,
+  "lastErrorMessage": "",
+  "lastErrorDate": null,
+  "hasCustomCertificate": false,
+  "maxConnections": 40
+}
+```
+
+#### 注册 Webhook (`POST` 且 `action: "register"`)
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "register"}'
+```
+响应示例：
+```json
+{
+  "success": true,
+  "message": "Telegram Webhook 自动注册成功！",
+  "webhookUrl": "https://cf-pages-drive-player.pages.dev/api/telegram/webhook",
+  "secretTokenConfigured": true,
+  "webhookActive": true,
+  "pendingUpdateCount": 0
+}
+```
+> 仅当配置了 `TELEGRAM_WEBHOOK_SECRET` 时才会自动携带 `secret_token`，从而保证 Webhook URL 不被伪造调用。
+
+#### 测试 Bot 连接 (`POST` 且 `action: "test"`)
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "test"}'
+```
+响应示例：
+```json
+{
+  "success": true,
+  "botUsername": "my_drive_bot",
+  "botFirstName": "Drive Transfer",
+  "botId": 1234567890
+}
+```
+
+#### 端到端转存自检 (`POST` 且 `action: "test-upload"`)
+向目标目录上传一个极小的探针文件并立即删除，用于验证凭据、配额与写权限。
+```bash
+curl -X POST https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "test-upload"}'
+```
+响应示例：
+```json
+{
+  "success": true,
+  "probeFileId": "1ProbeFileId",
+  "targetFolderId": "1-3i7VNCMLtTfkWxWpSemjUIvdwNLCi6l"
+}
+```
+
+#### 注销 Webhook (`DELETE`)
+```bash
+curl -X DELETE https://cf-pages-drive-player.pages.dev/api/admin/telegram \
+  -H "Authorization: Bearer <ADMIN_TOKEN>"
 ```

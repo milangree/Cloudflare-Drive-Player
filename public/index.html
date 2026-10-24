@@ -506,7 +506,7 @@
                 />
               </div>
               <div>
-                <label class="block text-xs text-slate-400 mb-1">许可用户白名单 (可选)</label>
+                <label class="block text-xs text-slate-400 mb-1">许可用户白名单 (必填)</label>
                 <input 
                   type="text" 
                   id="cfg-tg-allowed-users" 
@@ -515,13 +515,37 @@
                 />
               </div>
             </div>
-            <!-- 一键绑定 Webhook 快捷按钮 -->
-            <div class="pt-1 flex items-center justify-between border-t border-slate-800/40">
-              <span class="text-[10px] text-slate-400" id="tg-webhook-info-text">保存 Token 后可一键向 Telegram 注册 Webhook</span>
-              <button type="button" id="btn-register-tg-webhook" class="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-xs font-medium transition-colors flex items-center gap-1">
-                <i data-lucide="zap" class="w-3 h-3"></i>
-                <span>一键绑定 Webhook</span>
-              </button>
+            <!-- 白名单 fail-closed 警示：留空时后端将拒绝所有上传请求 -->
+            <div id="tg-allowed-users-warning" class="hidden flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+              <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0"></i>
+              <p class="text-[10px] text-amber-300 leading-relaxed">
+                <b>安全策略：fail-closed。</b>白名单留空时，机器人将<b>拒绝所有文件上传请求</b>（文本指令仍可响应）。请填入你的 Telegram 数字 ID 或 @username，否则转存功能无法使用。
+              </p>
+            </div>
+            <!-- Webhook 状态与自检工具 -->
+            <div class="pt-1 border-t border-slate-800/40 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-slate-400" id="tg-webhook-info-text">保存 Token 后可一键向 Telegram 注册 Webhook</span>
+                <button type="button" id="btn-register-tg-webhook" class="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-xs font-medium transition-colors flex items-center gap-1">
+                  <i data-lucide="zap" class="w-3 h-3"></i>
+                  <span>一键绑定 Webhook</span>
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500" id="tg-webhook-detail">Webhook 状态：未查询</p>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="btn-test-tg-connection" class="px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700 text-xs font-medium transition-colors flex items-center gap-1">
+                  <i data-lucide="wifi" class="w-3 h-3"></i>
+                  <span>测试 Bot 连接</span>
+                </button>
+                <button type="button" id="btn-test-tg-upload" class="px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 border border-slate-700 text-xs font-medium transition-colors flex items-center gap-1">
+                  <i data-lucide="upload-cloud" class="w-3 h-3"></i>
+                  <span>测试转存链路</span>
+                </button>
+                <button type="button" id="btn-unregister-tg-webhook" class="px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-medium transition-colors flex items-center gap-1">
+                  <i data-lucide="trash-2" class="w-3 h-3"></i>
+                  <span>注销 Webhook</span>
+                </button>
+              </div>
             </div>
           </div>
 

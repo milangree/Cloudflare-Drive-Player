@@ -190,6 +190,45 @@ async function runHealthCheck() {
         const allowOrigin = resp.headers.get('access-control-allow-origin');
         return allowOrigin === '*';
       }
+    },
+    {
+      name: 'Telegram Webhook 契约与错误隔离 (POST /api/telegram/webhook)',
+      path: '/api/telegram/webhook',
+      method: 'POST',
+      body: JSON.stringify({ update_id: 999999999, message: { chat: { id: 1 }, text: "/start" } }),
+      contentType: 'application/json',
+      // 未配置 Bot Token -> 200 + {ok:false}；配置了 secret 但未带正确头 -> 401。
+      // 两种情况都必须返回结构化 JSON，不得泄露堆栈或原始错误文本。
+      expectedStatus: [200, 401, 403],
+      validate: async (resp) => {
+        const type = resp.headers.get('content-type') || '';
+        if (!type.includes('application/json')) return false;
+        const text = await resp.text();
+        if (text.includes('at ') && text.includes('.js:')) return false; // 堆栈泄露
+        try {
+          const data = JSON.parse(text);
+          return typeof data.ok === 'boolean';
+        } catch (_) {
+          return false;
+        }
+      }
+    },
+    {
+      name: '文件元数据接口契约与错误隔离 (GET /api/meta/:id)',
+      path: '/api/meta/__probe_nonexistent_id__',
+      expectedStatus: [401, 404, 500],
+      validate: async (resp) => {
+        const type = resp.headers.get('content-type') || '';
+        if (!type.includes('application/json')) return false;
+        const text = await resp.text();
+        if (text.includes('at ') && text.includes('.js:')) return false;
+        try {
+          const data = JSON.parse(text);
+          return typeof data.success === 'boolean';
+        } catch (_) {
+          return false;
+        }
+      }
     }
   ];
 

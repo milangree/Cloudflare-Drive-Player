@@ -86,6 +86,11 @@ const dom = {
   tgStatusBadge: document.getElementById("tg-status-badge"),
   tgWebhookInfoText: document.getElementById("tg-webhook-info-text"),
   btnRegisterTgWebhook: document.getElementById("btn-register-tg-webhook"),
+  tgAllowedUsersWarning: document.getElementById("tg-allowed-users-warning"),
+  tgWebhookDetail: document.getElementById("tg-webhook-detail"),
+  btnTestTgConnection: document.getElementById("btn-test-tg-connection"),
+  btnTestTgUpload: document.getElementById("btn-test-tg-upload"),
+  btnUnregisterTgWebhook: document.getElementById("btn-unregister-tg-webhook"),
   adminLogoutBtn: document.getElementById("admin-logout-btn"),
   // 单个文件操作模态框 (保留用于单项重命名/移动)
   fileActionModal: document.getElementById("file-action-modal"),
@@ -708,6 +713,15 @@ async function loadAdminDashboard() {
       if (dom.cfgTgUploadFolder) dom.cfgTgUploadFolder.value = data.config.tgUploadFolderId || "";
       if (dom.cfgTgAllowedUsers) dom.cfgTgAllowedUsers.value = data.config.tgAllowedUsers || "";
 
+      // 白名单留空 = fail-closed（后端将拒绝所有上传请求），必须显式警示
+      if (dom.tgAllowedUsersWarning) {
+        if (data.config.tgBotToken && !(data.config.tgAllowedUsers || "").trim()) {
+          dom.tgAllowedUsersWarning.classList.remove("hidden");
+        } else {
+          dom.tgAllowedUsersWarning.classList.add("hidden");
+        }
+      }
+
       // 更新 Telegram 状态徽章与提示
       if (dom.tgStatusBadge) {
         if (data.config.tgBotToken) {
@@ -724,6 +738,9 @@ async function loadAdminDashboard() {
           }
         }
       }
+
+      // 回查真实 Webhook 状态（不再依据本地填写内容臆断）
+      await refreshTelegramWebhookStatus();
 
       // 更新存储模式状态条 (Cloudflare KV vs Google Drive Metadata)
       if (dom.kvStatusIndicator && dom.kvStatusDot && dom.kvStatusText && dom.kvStatusBadge) {
@@ -3332,6 +3349,72 @@ function showLoading(show) {
 }
 
 // 事件监听与初始化
+// 回查 Telegram Webhook 真实状态（不依据本地填写内容臆断）
+// 注意：必须是顶层函数 —— loadAdminDashboard() 与 setupEventListeners() 均会调用
+async function refreshTelegramWebhookStatus() {
+  if (!dom.tgStatusBadge || !state.adminToken) return;
+  try {
+    const res = await fetch("/api/admin/telegram", {
+      headers: { Authorization: `Bearer ${state.adminToken}` },
+    });
+    const data = await res.json();
+    if (!data.success) {
+      dom.tgStatusBadge.className =
+        "px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400";
+      dom.tgStatusBadge.textContent = "状态未知";
+      if (dom.tgWebhookDetail) dom.tgWebhookDetail.textContent = "无法获取 Webhook 状态";
+      return;
+    }
+    if (data.webhookActive) {
+      dom.tgStatusBadge.className =
+        "px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+      dom.tgStatusBadge.textContent = "WEBHOOK: ACTIVE";
+    } else {
+      dom.tgStatusBadge.className =
+        "px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-400 border border-amber-500/30";
+      dom.tgStatusBadge.textContent = "WEBHOOK: NOT SET";
+    }
+    const details = [];
+    if (data.pendingUpdateCount > 0) details.push(`⚠️ 积压更新 ${data.pendingUpdateCount} 条`);
+    if (data.lastErrorMessage) details.push(`最后错误: ${data.lastErrorMessage}`);
+    if (dom.tgWebhookDetail) {
+      dom.tgWebhookDetail.textContent = details.length
+        ? details.join("  |  ")
+        : `Webhook 地址: ${data.url || "(未设置)"}`;
+    }
+  } catch (_) {
+    if (dom.tgWebhookDetail) dom.tgWebhookDetail.textContent = "状态查询失败";
+  }
+}
+
+// Telegram 深链：?file=<id> 直接定位并打开文件（无需先知道所在目录）
+// 注意：必须是顶层函数 —— init() 在 DOMContentLoaded 时调用
+async function openFileById(fileId) {
+  if (!fileId) return false;
+  try {
+    const headers = state.accessToken ? { Authorization: `Bearer ${state.accessToken}` } : {};
+    const res = await fetch(`/api/meta/${encodeURIComponent(fileId)}`, { headers });
+    if (res.status === 401) {
+      showToast("请先输入站点访问密码");
+      return false;
+    }
+    const data = await res.json();
+    if (!data.success || !data.item) {
+      showToast("无法定位该文件: " + (data.error || "未知原因"));
+      return false;
+    }
+    const item = data.item;
+    if (item.isAudio) openAudioStudio(item);
+    else if (item.isImage) openImagePreview(item);
+    else if (item.isVideo) openMediaPlayer(item);
+    else openDocViewer(item);
+    return true;
+  } catch (err) {
+    showToast("打开文件失败: " + err.message);
+    return false;
+  }
+}
+
 function setupEventListeners() {
   // 返回当前根目录
   dom.btnHome.addEventListener("click", () => {
@@ -3715,14 +3798,16 @@ function setupEventListeners() {
         });
         const data = await res.json();
         if (data.success) {
-          showToast("🎉 Telegram Webhook 绑定成功！");
+          showToast(
+            data.secretTokenConfigured
+              ? "🎉 Telegram Webhook 绑定成功（已启用 secret_token 校验）！"
+              : "🎉 Telegram Webhook 绑定成功！（未配置 secret_token，建议配置以增强安全性）"
+          );
           if (dom.tgWebhookInfoText) {
-            dom.tgWebhookInfoText.textContent = `✅ Webhook 已成功接入: ${data.webhookUrl}`;
+            dom.tgWebhookInfoText.textContent = `✅ Webhook 已接入: ${data.webhookUrl}`;
           }
-          if (dom.tgStatusBadge) {
-            dom.tgStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-            dom.tgStatusBadge.textContent = "WEBHOOK: ACTIVE";
-          }
+          // 回查真实状态，不再直接写死 ACTIVE
+          await refreshTelegramWebhookStatus();
         } else {
           showToast("绑定失败: " + (data.error || "未知异常"));
         }
@@ -3732,6 +3817,95 @@ function setupEventListeners() {
         dom.btnRegisterTgWebhook.disabled = false;
         dom.btnRegisterTgWebhook.innerHTML = `<i data-lucide="zap" class="w-3 h-3"></i><span>一键绑定 Webhook</span>`;
         if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
+  // Telegram：只读探测 Bot Token 有效性
+  if (dom.btnTestTgConnection) {
+    dom.btnTestTgConnection.addEventListener("click", async () => {
+      dom.btnTestTgConnection.disabled = true;
+      const original = dom.btnTestTgConnection.innerHTML;
+      dom.btnTestTgConnection.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>测试中...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+      try {
+        const res = await fetch("/api/admin/telegram", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${state.adminToken}`,
+          },
+          body: JSON.stringify({ action: "test" }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`✅ Bot 连接正常: @${data.botUsername} (ID: ${data.botId})`);
+        } else {
+          showToast("❌ " + (data.error || "Bot Token 无效"));
+        }
+      } catch (err) {
+        showToast("测试失败: " + err.message);
+      } finally {
+        dom.btnTestTgConnection.disabled = false;
+        dom.btnTestTgConnection.innerHTML = original;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
+  // Telegram：端到端链路自检（上传极小文件后立即删除）
+  if (dom.btnTestTgUpload) {
+    dom.btnTestTgUpload.addEventListener("click", async () => {
+      dom.btnTestTgUpload.disabled = true;
+      const original = dom.btnTestTgUpload.innerHTML;
+      dom.btnTestTgUpload.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>上传中...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+      try {
+        const res = await fetch("/api/admin/telegram", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${state.adminToken}`,
+          },
+          body: JSON.stringify({ action: "test-upload" }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`✅ 转存链路正常（测试文件已清理，目标目录: ${data.targetFolderId}）`);
+        } else {
+          showToast("❌ " + (data.error || "转存链路异常"));
+        }
+      } catch (err) {
+        showToast("测试失败: " + err.message);
+      } finally {
+        dom.btnTestTgUpload.disabled = false;
+        dom.btnTestTgUpload.innerHTML = original;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    });
+  }
+
+  // Telegram：注销 Webhook
+  if (dom.btnUnregisterTgWebhook) {
+    dom.btnUnregisterTgWebhook.addEventListener("click", async () => {
+      if (!confirm("确定要移除 Telegram Webhook 吗？移除后机器人将不再接收消息。")) return;
+      dom.btnUnregisterTgWebhook.disabled = true;
+      try {
+        const res = await fetch("/api/admin/telegram", {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${state.adminToken}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Webhook 已移除");
+          await refreshTelegramWebhookStatus();
+        } else {
+          showToast("移除失败: " + (data.error || "未知异常"));
+        }
+      } catch (err) {
+        showToast("请求异常: " + err.message);
+      } finally {
+        dom.btnUnregisterTgWebhook.disabled = false;
       }
     });
   }
@@ -3962,6 +4136,20 @@ async function init() {
   initTheme();
   setupEventListeners();
   await checkSystemInfo();
+
+  // Telegram 深链：?file=<id> 直接定位并打开文件（无需先知道所在目录）
+  const fileParam = new URLSearchParams(window.location.search).get("file");
+  if (fileParam) {
+    const opened = await openFileById(fileParam);
+    if (opened) {
+      // 清理 URL 参数，避免刷新页面时重复弹出
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("file");
+        window.history.replaceState({}, "", url.toString());
+      } catch (_) {}
+    }
+  }
 }
 
 document.addEventListener("DOMContentLoaded", init);

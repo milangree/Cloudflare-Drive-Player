@@ -277,8 +277,9 @@ export async function verifyAccessToken(token, env) {
 
 /**
  * 恒定时间字符串比较，防止时序侧信道攻击 (Timing Attack)
+ * 导出以供 Telegram Webhook 等需要校验密钥头的入口复用
  */
-function timingSafeEqual(a, b) {
+export function timingSafeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
   if (a.length !== b.length) return false;
   let out = 0;

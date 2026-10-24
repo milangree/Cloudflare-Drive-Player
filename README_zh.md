@@ -34,6 +34,7 @@
   - [2.8 极简深色视窗美学](#28-极简深色视窗美学)
   - [2.9 管理员后台与全生命周期文件管理](#29-管理员后台与全生命周期文件管理)
   - [2.10 Google Drive 多源挂载与快捷方式穿透](#210-google-drive-多源挂载与快捷方式穿透)
+  - [2.11 Telegram 媒体转存机器人](#211-telegram-媒体转存机器人)
 - [3. 极速部署指南（5 分钟上线）](#3-极速部署指南5-分钟上线)
   - [3.1 Cloudflare Pages 一键导入](#31-cloudflare-pages-一键导入)
   - [3.2 环境变量详细配置清单](#32-环境变量详细配置清单)
@@ -49,6 +50,7 @@
   - [Q4: 未绑定 KV 会影响使用吗？三级元数据持久化是什么？](#q4-未绑定-kv-会影响使用吗三级元数据持久化是什么)
   - [Q5: 上传文件或创建文件时报错 Quota: 0 或 storageQuotaExceeded？](#q5-上传文件或创建文件时报错-quota-0-或-storagequotaexceeded)
   - [Q6: 如何唤起第三方本地播放器（PotPlayer / IINA / VLC / Infuse / MPV）？](#q6-如何唤起第三方本地播放器potplayer--iina--vlc--infuse--mpv)
+  - [Q7: Telegram 机器人返回 401 / 无操作权限 / 20MB 上限？](#q7-telegram-机器人返回-401--无操作权限--20mb-上限)
 - [6. 系统架构全景图](#6-系统架构全景图)
 - [7. 本地开发与质量闸门](#7-本地开发与质量闸门)
 - [8. 技术文档索引与致谢](#8-技术文档索引与致谢)
@@ -127,6 +129,18 @@
 ### 2.10 Google Drive 多源挂载与快捷方式穿透
 - 支持挂载「我的云端硬盘」普通文件夹或团队盘（Shared Drive）。
 - **快捷方式穿透**：通过 Google Drive 官方「添加快捷方式」功能，将分布在不同账号、团队盘或其他人共享的文件夹集中放入根文件夹，系统后端将自动透明解封装并穿透访问。
+
+---
+
+### 2.11 Telegram 媒体转存机器人
+- 把 Telegram 里的任意**视频、音频、文档、照片或语音消息**经由官方 Drive API 直接转存进你的 Google Drive——机器人充当边缘中转。
+- **secret_token 来源校验**：配置 `TELEGRAM_WEBHOOK_SECRET` 后，每次投递都必须携带匹配的 `X-Telegram-Bot-Api-Secret-Token` 头（恒定时间比较），不匹配返回 **401**。
+- **白名单 fail-closed**：白名单留空时拒绝所有上传请求，公开可访问的端点因此绝不会被陌生人滥用。
+- **20 MB 上限，前置校验**：在任何出站请求之前即强制执行 Telegram 的 `getFile` 限制。
+- **幂等转存**：以 Telegram `file_unique_id`（写入 Drive `appProperties`）为键，Telegram 重推不会产生重复文件。
+- **深链直达**：转存成功后返回站内链接（`?file=<id>`）与下载直链。
+- **自检工具**：在后台测试 Bot 连通性、执行端到端上传探针。
+- 完整指南：[docs/telegram-integration_zh.md](docs/telegram-integration_zh.md)
 
 ---
 
@@ -317,6 +331,19 @@ id = "6234abcd5678ef901234567890abcdef" # 替换为您真实的 KV Namespace ID
 | **Android ExoPlayer** | `intent:<StreamUrl>#Intent;action=android.intent.action.VIEW;type=video/*;end` | Android 手机 / 平板 / 电视 |
 
 > **提示**：当全站开启访问密码保护时，外部播放器 URL 会自动在 Query 参数中附加 `?token=<token>`，确保外部播放器取流成功。
+
+---
+
+### Q7: Telegram 机器人返回 401 / 无操作权限 / 20MB 上限？
+
+| 现象 | 原因 | 处理 |
+| :--- | :--- | :--- |
+| 机器人回复 `无操作权限` | 发送者不在白名单 | 将数字 ID 或 `@username` 加入 `TELEGRAM_ALLOWED_USERS` |
+| 机器人对所有文件都无响应 | 白名单留空（**fail-closed**） | 填写 `TELEGRAM_ALLOWED_USERS` |
+| Telegram 显示 `last_error_message` | 密钥不匹配或 URL 不可达 | 确认两侧 `TELEGRAM_WEBHOOK_SECRET` 一致；确认 URL 公开可访问 |
+| 25 MB 文件报 `文件过大` | Telegram 的 20 MB `getFile` 限制 | 压缩/拆分文件，或直接上传到 Drive |
+| 重推后出现重复文件 | 幂等键未写入 | 确认目标文件夹允许写入 `appProperties` |
+| 上传报配额错误 | 服务账号自身无存储 | 指向共享云端硬盘并授予管理员权限 |
 
 ---
 

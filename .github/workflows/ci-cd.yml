@@ -44,6 +44,12 @@ jobs:
       - name: Run JavaScript Syntax & Static Check
         run: npm run test:syntax
 
+      - name: Run Module Resolution & Contract Test
+        # 真实断言门禁：npm run test:syntax 只做 node --check 的 AST 解析，
+        # 无法发现 import 说明符写错（run 39885824930 的漏检根因）。
+        # 本步骤用 node:test 真实 import 每个 functions 模块并校验错误契约。
+        run: npm test
+
       - name: Run Production Dependency Vulnerability Gate
         # 生产运行时依赖高危漏洞阻断门禁 (运行时 Zero Dependencies 强制保障)
         run: npm audit --omit=dev --audit-level=high
